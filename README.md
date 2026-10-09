@@ -1,109 +1,204 @@
-# 🏆 KOLIZEY MINE — oylik reklama chempionati (Telegram bot + backend)
+# AdRush
 
-AdsGram orqali **server tasdiqlagan** reklama ko'rishlarini sanaydi, har oy TOP 3 ni aniqlaydi.
-Node.js · CommonJS · grammY · Express · PostgreSQL · Prisma · (ixtiyoriy) Redis.
+AdRush --- Telegram bot va Telegram Mini App orqali AdsGram
+reklamalarini server tomonidan tasdiqlash, foydalanuvchilarga **Rush
+Coin** berish va oylik chempionatlarni boshqarish uchun loyiha.
 
-## Imkoniyatlar
+## Texnologiyalar
 
-- **Bot**: `/start /help /stats /myrank /leaderboard /rules`, inline tugmalar, Mine App (Web App) tugmasi
-- **Mine App** (`/mine/`): reyting, o'z o'rni, taymer, "Reklama ko'rish" (avtomatik yangilanadi)
-- **Reward xavfsizligi**: server sessiyasi + AdsGram Reward URL tasdig'i + unique constraint + tranzaksiya + advisory lock
-- **Oy almashish**: oy tugaganda avtomatik LOCK → TOP 3 → `Winner` → keyingi oy ochiladi; eski oylar o'chmaydi
-- **Admin** (bot): `/admin /admin_stats /admin_leaderboard /admin_winners /admin_user /admin_close_month /admin_prize`
-- **Production**: health, structured log (pino), global error handler, graceful shutdown, rate limit (Redis ixtiyoriy), Docker
+-   Node.js (CommonJS)
+-   Telegram bot: grammY
+-   Backend API: Express
+-   Ma'lumotlar bazasi: PostgreSQL
+-   ORM va migratsiyalar: Prisma
+-   Ixtiyoriy Redis
+-   Telegram Mini App frontend
+-   Docker Compose
 
-## Tez boshlash (lokal)
+## Asosiy imkoniyatlar
 
-```bash
-cp .env.example .env            # BOT_TOKEN, DATABASE_URL, ADMIN_IDS, ADSGRAM_* ni to'ldiring
-npm install
-npm run db:setup                # prisma generate + migrate deploy + seed
-npm run dev
+-   Telegram bot va Mine App (Mini App)
+-   AdsGram Reward URL orqali serverdan tasdiqlangan reklama mukofotlari
+-   Reklama sessiyalari va takroriy mukofot olishdan himoya
+-   Rush Coin: reklama, referal va obuna mukofotlari
+-   Chempionatlar, tikishlar, reyting va g'oliblar tarixi
+-   Admin funksiyalari va sovrinlarni boshqarish
+-   Admin yuklagan sovrin/g'olib rasmlarini saqlash
+-   Health endpointlar, loglar, rate limiting va graceful shutdown
+-   Docker Compose orqali ilova, PostgreSQL va Redis'ni ishga tushirish
+
+## Talablar
+
+Docker usuli uchun: - Docker Engine - Docker Compose plugin
+
+Docker'siz ishlatish uchun: - Node.js `>=18.18` - npm - PostgreSQL -
+(ixtiyoriy) Redis
+
+## Konfiguratsiya
+
+1.  Repozitoriyani yuklab oling:
+
+    ``` bash
+    git clone https://github.com/elnurshukhratov/AdRush.git
+    cd AdRush
+    ```
+
+2.  Muhit faylini yarating:
+
+    ``` bash
+    cp .env.example .env
+    ```
+
+3.  `.env` ichidagi sozlamalarni o'zingizning qiymatlaringiz bilan
+    to'ldiring. Eng muhimlari:
+
+    -   `BOT_TOKEN` --- BotFather bergan Telegram bot tokeni
+    -   `ADMIN_IDS` --- admin Telegram ID'lari
+    -   `MINE_APP_URL` --- Mine App uchun ommaviy HTTPS manzil
+    -   `ADSGRAM_BLOCK_ID` --- AdsGram Reward blok ID'si
+    -   `ADSGRAM_REWARD_TOKEN` --- o'zingiz yaratgan maxfiy token
+    -   `POSTGRES_PASSWORD` --- Docker Compose ishlatilgandagi
+        PostgreSQL paroli
+    -   `DATABASE_URL` --- PostgreSQL ulanish manzili
+
+    `.env` faylini GitHub'ga yubormang. `.env.example` ichida ham
+    haqiqiy token, parol yoki shaxsiy maxfiy qiymat bo'lmasin.
+
+## Docker orqali ishga tushirish (tavsiya)
+
+`.env` faylida kamida yuqoridagi qiymatlarni to'g'ri sozlagach:
+
+``` bash
+docker compose up -d --build
 ```
 
-Telegram'dan tashqaridan sinash uchun HTTPS kerak: `cloudflared tunnel --url http://localhost:3000` → hosil bo'lgan
-`https://...trycloudflare.com/mine/` ni `MINE_APP_URL` ga qo'ying.
+Holatini ko'rish:
 
-## Docker
-
-```bash
-cp .env.example .env     # BOT_TOKEN, ADMIN_IDS, ADSGRAM_*, POSTGRES_PASSWORD ni to'ldiring
-docker compose up -d --build
+``` bash
+docker compose ps
 docker compose logs -f app
+```
+
+Health tekshiruvi:
+
+``` bash
 curl http://127.0.0.1:3000/health
 ```
 
-Konteyner ishga tushganda `prisma migrate deploy` va idempotent seed avtomatik bajariladi
-(o'chirish: `RUN_MIGRATIONS=false`, `RUN_SEED=false`). Telegram Mini App va AdsGram Reward URL **HTTPS** talab qiladi —
-app oldiga nginx/Caddy/Cloudflare qo'ying va `TRUST_PROXY=1` qiling.
+To'xtatish:
 
-## Bot rejimlari
+``` bash
+docker compose down
+```
 
-| Rejim | Qachon | Eslatma |
-|---|---|---|
-| `polling` (default) | bitta instansiya, oddiy deploy | Ikkinchi instansiya `409 Conflict` beradi — log'da aniq yoziladi |
-| `webhook` | bir nechta instansiya / zero-downtime deploy | `WEBHOOK_URL` + `WEBHOOK_SECRET` majburiy; Telegram `secret_token` har so'rovda tekshiriladi |
+Bu buyruq ma'lumotlar saqlanadigan Docker volume'larni o'chirmaydi.
+`docker compose down -v` esa volume'larni, jumladan ma'lumotlar bazasini
+o'chirishi mumkin --- uni ehtiyotkorlik bilan ishlating.
 
-## Muhim env o'zgaruvchilari
+### HTTPS
 
-Hammasi `.env.example` da izohlangan. Asosiylari: `BOT_TOKEN`, `DATABASE_URL`, `ADMIN_IDS`, `MINE_APP_URL`,
-`ADSGRAM_BLOCK_ID`, `ADSGRAM_REWARD_TOKEN`, `ADSGRAM_VERIFY_MODE`, `BOT_MODE`, `REDIS_URL`, `TRUST_PROXY`.
+Telegram Mini App va AdsGram Reward URL uchun ommaviy HTTPS manzili
+kerak. Production muhitida domen va Nginx/Caddy/Cloudflare kabi reverse
+proxy sozlang. Reverse proxy ortida ishlaganda `TRUST_PROXY` qiymatini
+haqiqiy topologiyaga moslang.
+
+## Lokal Node.js orqali ishga tushirish
+
+PostgreSQL va kerak bo'lsa Redis oldindan ishga tushgan bo'lishi kerak.
+
+``` bash
+npm install
+cp .env.example .env
+```
+
+`.env` ni to'ldirgach:
+
+``` bash
+npm run db:setup
+npm start
+```
+
+Rivojlantirish rejimi:
+
+``` bash
+npm run dev
+```
+
+## Foydali buyruqlar
+
+``` bash
+npm test                  # testlarni ishga tushirish
+npm run check             # JavaScript sintaksisini tekshirish
+npm run prisma:generate   # Prisma Client yaratish
+npm run prisma:migrate:deploy
+npm run seed
+```
+
+## Muhim endpointlar
+
+  Endpoint                         Maqsad
+  -------------------------------- ------------------------------------------------
+  `GET /health/live`               Jarayon ishlayotganini tekshirish
+  `GET /health`                    Ilova va bog'liqliklar tayyorligini tekshirish
+  `GET /api/competition/current`   Joriy chempionat
+  `GET /api/leaderboard/current`   Joriy reyting
+  `GET /api/users/me/stats`        Foydalanuvchi statistikasi
+  `POST /api/ads/session`          Reklama sessiyasini boshlash
+  `POST /api/ads/reward`           Sessiya mukofotini so'rash
+  `GET /api/adsgram/reward`        AdsGram server callback endpointi
+
+Foydalanuvchi endpointlarining ko'pchiligi Telegram Mini App `initData`
+autentifikatsiyasini talab qiladi.
 
 ## AdsGram sozlash
 
-1. partner.adsgram.ai da **Reward** blok yarating → ID ni `ADSGRAM_BLOCK_ID` ga yozing.
-2. `openssl rand -hex 32` → `ADSGRAM_REWARD_TOKEN`.
-3. AdsGram kabinetida blokning **Reward URL** maydoniga yozing:
-   `https://YOUR_DOMAIN/api/adsgram/reward?userid=[userId]&token=<ADSGRAM_REWARD_TOKEN>`
-4. **Eslatma (halol cheklov):** AdsGram hujjatida Reward URL so'rovi imzolanishi, reward ID yoki rasmiy IP
-   ro'yxati haqida ma'lumot yo'q. Shuning uchun himoya qatlami bizniki: maxfiy `token`, server sessiyasi,
-   minimal davomiylik, cooldown, bir tasdiq — bir sessiya. Bu joylar kodda `TODO(ADSGRAM-UNVERIFIED)` bilan
-   belgilangan (`src/services/adsgram/adsgramService.js`). AdsGram imzo e'lon qilsa, faqat shu fayl o'zgaradi.
-5. `debug: true` rejimida AdsGram Reward URL'ga so'rov yubormaydi — sinov paytida +1 bo'lmasa shu sababdan bo'lishi mumkin.
+1.  AdsGram kabinetida Reward blokini yarating va ID'sini
+    `ADSGRAM_BLOCK_ID` ga kiriting.
 
-## API
+2.  Maxfiy token yarating:
 
-Barcha xatolar bir xil formatda: `{ "success": false, "reason": "KOD", "message": "...", "requestId": "..." }`
+    ``` bash
+    openssl rand -hex 32
+    ```
 
-| Endpoint | Auth | Tavsif |
-|---|---|---|
-| `GET /health/live` | — | Jarayon tirik (liveness) |
-| `GET /health` | — | DB (+Redis holati) tayyorligi (readiness); shutdown paytida 503 |
-| `GET /api/competition/current` | `tma` | Joriy competition |
-| `GET /api/leaderboard/current?limit=` | `tma` | TOP ro'yxat (+ o'zining qatori) |
-| `GET /api/users/me/stats` | `tma` | `validAds, rank, nextRank, adsToNextRank` |
-| `POST /api/ads/session` | `tma` | Reklama sessiyasini ochadi |
-| `POST /api/ads/reward` `{sessionId}` | `tma` | Reward da'vo qilish (`DUPLICATE_REWARD` va h.k.) |
-| `GET /api/ads/session/:id` | `tma` | Sessiya holati (polling) |
-| `GET /api/adsgram/reward?userid=&token=` | token | AdsGram server-to-server tasdiq |
-| `POST /telegram/webhook` | secret_token | Faqat `BOT_MODE=webhook` |
+3.  Hosil bo'lgan tokenni faqat serverdagi `.env` faylining
+    `ADSGRAM_REWARD_TOKEN` qiymatiga kiriting.
 
-`tma` = `Authorization: tma <Telegram.WebApp.initData>` — backend HMAC-SHA256 bilan tekshiradi; frontenddan kelgan `userId` ga ishonilmaydi.
+4.  AdsGram kabinetidagi Reward URL'ni loyiha konfiguratsiyasiga mos
+    ravishda sozlang. Masalan:
 
-## Struktura
+    ``` text
+    https://YOUR_DOMAIN/api/adsgram/reward?userid=[userId]&token=YOUR_SECRET_TOKEN
+    ```
 
-```
-src/
-  bot/ (commands, keyboards, handlers, middlewares, admin)
-  api/ (routes, controllers, middlewares)
-  services/ (adsgram, competition, leaderboard, rewards, users, admin, audit)
-  db/ (prisma.js, redis.js)  jobs/ (monthRollover.js)  config/  utils/
-  app.js  bot.js  server.js
-prisma/ (schema.prisma, migrations/, seed.js)
-public/mine/ (Mine App UI)
-tests/  Dockerfile  docker-compose.yml  docker-entrypoint.sh  .env.example
-```
+5.  Reward URL faqat HTTPS orqali ochilishini va AdsGram kabinetidagi
+    blok sozlamalari bilan mosligini tekshiring.
 
-## Skriptlar
+**Xavfsizlik eslatmasi:** callback himoyasi ushbu loyihaning joriy
+implementatsiyasiga bog'liq. Ishlab chiqarishga chiqarishdan oldin
+AdsGram'ning amaldagi hujjatlari bilan tekshiring; tokenni oshkor
+qilmang va callback'ni oddiy foydalanuvchi mukofot olish endpointi deb
+hisoblamang.
 
-`npm start` · `npm run dev` · `npm test` (DB talab qilmaydi) · `npm run check` · `npm run db:setup` ·
-`npm run prisma:migrate:dev` · `npm run prisma:migrate:deploy` · `npm run seed` · `npm run docker:up`
+## Bot rejimi
 
-## Production eslatmalari
+`BOT_MODE=polling` --- odatda bitta server instansiyasi uchun. Bir
+vaqtning o'zida bir nechta polling instansiyasini ishga tushirmang.
 
-- `.env` va tokenlar hech qachon GitHub'ga tushmasin (`.gitignore` da bor). Token oshkor bo'lsa — @BotFather'da yangilang.
-- Polling rejimida faqat **bitta** bot instansiyasi. Bir nechta app instansiyasi kerak bo'lsa `BOT_MODE=webhook` + `REDIS_URL`.
-- Bot throttle va leaderboard keshi instansiya ichida (xotirada) — bu zararsiz (qisqa TTL / polling bitta instansiyada).
-- DB zaxira nusxasi (pg_dump) — g'oliblar tarixi shu yerda; o'zingiz sozlang.
-- Sovrinlarni o'zgartirish: bot'da `/admin_prize` (DB'da saqlanadi, kodda emas).
-- Test ro'yxati: [TEST_CHECKLIST.md](TEST_CHECKLIST.md)
+`BOT_MODE=webhook` ishlatilsa, `WEBHOOK_URL` va `WEBHOOK_SECRET` ni
+sozlash hamda HTTPS endpointni ta'minlash kerak.
+
+## Xavfsizlik va zaxira
+
+-   `.env`, tokenlar, parollar va maxfiy kalitlarni GitHub'ga yubormang.
+-   Token oshkor bo'lsa, tegishli provayderda darhol yangilang.
+-   PostgreSQL ma'lumotlar bazasining muntazam zaxira nusxasini oling.
+-   Production serverda firewall va HTTPS sozlang.
+-   `uploads/` va ma'lumotlar bazasi zaxirasini alohida saqlang.
+-   Migratsiyalarni production bazasida bajarishdan oldin zaxira nusxa
+    oling.
+
+## Litsenziya
+
+Litsenziya alohida ko'rsatilmagan. Ruxsat shartlarini aniqlash uchun
+loyiha egasi bilan bog'laning.
