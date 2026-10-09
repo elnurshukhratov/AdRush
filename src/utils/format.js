@@ -1,16 +1,10 @@
 'use strict';
 
-const MEDALS = { 1: '🥇', 2: '🥈', 3: '🥉' };
-
 function escapeHtml(value) {
   return String(value ?? '')
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;');
-}
-
-function medal(place) {
-  return MEDALS[place] || `${place}.`;
 }
 
 function formatNumber(n) {
@@ -22,13 +16,4 @@ function displayName(user) {
   return escapeHtml(user.firstName || 'Foydalanuvchi');
 }
 
-const MONTHS_UZ = [
-  'Yanvar', 'Fevral', 'Mart', 'Aprel', 'May', 'Iyun',
-  'Iyul', 'Avgust', 'Sentabr', 'Oktabr', 'Noyabr', 'Dekabr',
-];
-
-function monthLabel(competition) {
-  return `${MONTHS_UZ[competition.month - 1]} ${competition.year}`;
-}
-
-module.exports = { escapeHtml, medal, formatNumber, displayName, monthLabel };
+module.exports = { escapeHtml, formatNumber, displayName };

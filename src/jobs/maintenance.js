@@ -8,7 +8,7 @@ const INTERVAL_MS = 5 * 60 * 1000;
 /**
  * Davriy tozalash (idempotent, bir nechta instansiyada ham xavfsiz):
  *  - muddati o'tgan PENDING/CLAIMED reklama sessiyalari EXPIRED bo'ladi (holat to'g'ri ko'rinsin, claim/confirm ularni qabul qilmaydi).
- * Hech qanday ma'lumot o'chirilmaydi (AdReward, MonthlyStat, Winner, audit tarixi saqlanadi).
+ * Hech qanday ma'lumot o'chirilmaydi (AdReward, ledger, audit tarixi saqlanadi).
  */
 function startMaintenance() {
   let current = null;

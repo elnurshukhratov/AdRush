@@ -4,7 +4,7 @@ const { prisma } = require('../../db/prisma');
 const config = require('../../config');
 const logger = require('../../utils/logger');
 const { lockUser } = require('../../utils/dbLock');
-const { applyCoins, COIN_TX } = require('../coins/coinService');
+const { applyCoins, COIN_TX, CURRENCY } = require('../coins/coinService');
 const { startOfUtcDay } = require('../rewards/rewardCore');
 
 const TX_OPTS = Object.freeze({ maxWait: 5000, timeout: 10000 });
@@ -33,7 +33,7 @@ function parseReferrerId(raw) {
 
 /**
  * Yangi user referral havolasi orqali /start qilganda chaqiriladi (bot). Hammasi bitta tranzaksiyada:
- *   new user tekshiruvi -> referredByUserId yozish (faqat NULL bo'lsa) -> referrer'ga +reward -> ledger
+ *   new user tekshiruvi -> referredByUserId yozish (faqat NULL bo'lsa) -> referrer'ga +REFERRAL_DIAMOND_REWARD olmos -> ledger
  * Qaytadi: { success:true, reward, referrerTelegramId } yoki { success:false, reason }.
  *  reason: INVALID_REFERRER | SELF_REFERRAL | NOT_NEW_USER | REFERRER_NOT_FOUND | REFERRER_BLOCKED | ALREADY_REFERRED | DAILY_CAP | DUPLICATE_REFERRAL
  * `newUser` — DB'dagi User (id, telegramId, createdAt). Referrer ID'si faqat start payload'idan olinadi.
@@ -75,10 +75,11 @@ async function applyReferral(newUser, rawReferrerTelegramId) {
         }
       }
 
-      const reward = config.rush.referralReward;
+      const reward = config.diamond.referralReward; // olmos
       const credit = await applyCoins(tx, {
         userId: referrer.id,
         amount: reward,
+        currency: CURRENCY.DIAMOND,
         type: COIN_TX.REFERRAL_REWARD,
         idempotencyKey: `REFERRAL_REWARD:${newUser.id}`, // bitta yangi user = bitta reward
         refType: 'user',
@@ -97,20 +98,20 @@ async function applyReferral(newUser, rawReferrerTelegramId) {
   }
 }
 
-/** Foydalanuvchining referral statistikasi va havolasi. */
+/** Foydalanuvchining referral statistikasi (olmosda) va havolasi. */
 async function getMyReferrals(user) {
   const [invited, earned, username] = await Promise.all([
     prisma.user.count({ where: { referredByUserId: user.id } }),
     prisma.coinTransaction.aggregate({
-      where: { userId: user.id, type: COIN_TX.REFERRAL_REWARD },
+      where: { userId: user.id, type: COIN_TX.REFERRAL_REWARD, currency: CURRENCY.DIAMOND },
       _sum: { amount: true },
     }),
     getBotUsername(),
   ]);
   return {
     invited,
-    earned: earned._sum.amount || 0,
-    reward: config.rush.referralReward,
+    earnedDiamonds: earned._sum.amount || 0,
+    rewardDiamonds: config.diamond.referralReward,
     link: username ? `https://t.me/${username}?start=ref_${user.telegramId.toString()}` : null,
   };
 }

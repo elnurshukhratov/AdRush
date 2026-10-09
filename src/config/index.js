@@ -85,12 +85,6 @@ if (!/^https:\/\/[^\s]+$/i.test(mineAppUrl)) {
 
 const path = require('path');
 
-if (int('RUSH_LOSS_REFUND_PERCENT', 30, { min: 0 }) > 100) {
-  throw new Error('RUSH_LOSS_REFUND_PERCENT 0..100 oralig\'ida bo\'lishi kerak');
-}
-if (int('RUSH_MIN_BET', 1, { min: 1 }) > int('RUSH_MAX_BET', 1_000_000, { min: 1 })) {
-  throw new Error('RUSH_MIN_BET RUSH_MAX_BET dan katta bo\'lishi mumkin emas');
-}
 if (int('TRANSFER_MIN', 1, { min: 1 }) > int('TRANSFER_MAX', 1_000_000, { min: 1 })) {
   throw new Error('TRANSFER_MIN TRANSFER_MAX dan katta bo\'lishi mumkin emas');
 }
@@ -112,23 +106,9 @@ const config = Object.freeze({
 
   adsgram: Object.freeze({
     blockId: (process.env.ADSGRAM_BLOCK_ID || '').trim(),
-    // Tepadagi tezkor (+Rush) tugma uchun alohida Reward block. Bo'sh bo'lsa asosiy blockId ishlatiladi.
-    quickBlockId: (process.env.ADSGRAM_QUICK_BLOCK_ID || '').trim(),
     verifyMode, // 'server_confirmed' | 'client_session'
     rewardToken, // bizning o'z tokenimiz (AdsGram imzo bermaydi)
     callbackIpAllowlist: Object.freeze(parseList(process.env.ADSGRAM_CALLBACK_IP_ALLOWLIST)),
-  }),
-
-  leaderboard: Object.freeze({
-    defaultLimit: int('LEADERBOARD_DEFAULT_LIMIT', 10, { min: 1 }),
-    maxLimit: int('LEADERBOARD_MAX_LIMIT', 100, { min: 1 }),
-    cacheTtlMs: int('LEADERBOARD_CACHE_TTL_MS', 5000), // 0 = kesh o'chiq
-    refreshIntervalSec: int('LEADERBOARD_REFRESH_SEC', 15, { min: 1 }), // klientga auto-refresh tavsiyasi
-    exposeTelegramId: (process.env.LEADERBOARD_EXPOSE_TELEGRAM_ID || 'true').trim().toLowerCase() !== 'false',
-  }),
-
-  rollover: Object.freeze({
-    intervalMs: int('ROLLOVER_CHECK_SEC', 60, { min: 5 }) * 1000, // oy tugaganini tekshirish davri
   }),
 
   bot: Object.freeze({
@@ -146,22 +126,23 @@ const config = Object.freeze({
     shutdownTimeoutMs: int('SHUTDOWN_TIMEOUT_SEC', 15, { min: 3 }) * 1000,
   }),
 
-  // Sovrin rasmlari (admin yuklaydi). Docker'da bu papka volume bo'lishi kerak.
+  // Admin yuklaydigan rasmlar. Docker'da bu papka volume bo'lishi kerak.
   uploads: Object.freeze({
     dir: path.resolve(process.env.UPLOAD_DIR || path.join(__dirname, '..', '..', 'uploads')),
     maxBytes: int('UPLOAD_MAX_BYTES', 2 * 1024 * 1024, { min: 10_240 }),
   }),
 
-  // Rush Coin (ichki valyuta). Hamma qiymat serverda hisoblanadi — klientdan miqdor/balans qabul qilinmaydi.
+  // Olmos (reklama va referaldan olinadi) va uning Rush Coin ga kursi. Hamma qiymat serverda — klientdan miqdor/kurs qabul qilinmaydi.
+  diamond: Object.freeze({
+    perAd: int('DIAMOND_PER_AD', 1, { min: 1 }), // 1 ta valid reklama = +N olmos
+    referralReward: int('REFERRAL_DIAMOND_REWARD', 5, { min: 1 }), // yangi taklif qilingan user uchun taklif qiluvchiga (olmos)
+    toRush: int('DIAMOND_TO_RUSH', 12, { min: 1 }), // 1 olmos = N Rush Coin
+  }),
+
+  // Rush Coin (ichki valyuta).
   rush: Object.freeze({
-    adReward: int('RUSH_AD_REWARD', 5, { min: 1 }), // 1 ta valid reklama = +N Rush Coin
-    referralReward: int('RUSH_REFERRAL_REWARD', 20, { min: 1 }), // yangi taklif qilingan user uchun taklif qiluvchiga
     referralDailyCap: int('RUSH_REFERRAL_DAILY_CAP', 100), // bitta user kuniga (UTC) ko'pi bilan nechta referral oladi. 0 = cheklovsiz
     subscribeReward: int('RUSH_SUBSCRIBE_REWARD', 50, { min: 1 }), // majburiy kanalga birinchi marta obuna bo'lganda beriladigan Rush Coin
-    lossRefundPercent: int('RUSH_LOSS_REFUND_PERCENT', 30, { min: 0 }), // yutqazgan tikishning qaytariladigan foizi
-    maxActiveBets: int('MAX_ACTIVE_BETS', 5, { min: 1 }), // bir vaqtda faol betlar soni
-    minBet: int('RUSH_MIN_BET', 1, { min: 1 }),
-    maxBet: int('RUSH_MAX_BET', 1_000_000, { min: 1 }),
     // Foydalanuvchilar orasida Rush Coin o'tkazmasi (komissiya yo'q)
     transferMin: int('TRANSFER_MIN', 1, { min: 1 }),
     transferMax: int('TRANSFER_MAX', 1_000_000, { min: 1 }),

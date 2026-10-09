@@ -6,9 +6,9 @@ const crypto = require('crypto');
 const config = require('../../config');
 const logger = require('../../utils/logger');
 
-const PRIZE_DIR = path.join(config.uploads.dir, 'prizes');
-const PROOF_DIR = path.join(config.uploads.dir, 'proofs'); // sovrin topshirilganini tasdiqlovchi rasmlar (faqat admin)
-const URL_RE = /^\/uploads\/(?:prizes|proofs)\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(jpg|png|webp)$/;
+const SHOP_DIR = path.join(config.uploads.dir, 'shop'); // do'kon mahsulotlari rasmlari (faqat admin yuklaydi)
+const PROOF_DIR = path.join(config.uploads.dir, 'proofs'); // buyurtma yetkazilganini tasdiqlovchi rasmlar (faqat admin)
+const URL_RE = /^\/uploads\/(?:shop|proofs)\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(jpg|png|webp)$/;
 
 /** Fayl turi Content-Type ga emas, haqiqiy magic bytes ga qarab aniqlanadi. */
 function detectType(buf) {
@@ -19,7 +19,7 @@ function detectType(buf) {
   return null;
 }
 
-/** Faqat bizning /uploads/prizes/<uuid>.<jpg|png|webp> yo'li (tashqi URL va path traversal rad etiladi). */
+/** Faqat bizning /uploads/shop/<uuid>.<jpg|png|webp> (yoki /uploads/proofs/...) yo'li (tashqi URL va path traversal rad etiladi). */
 function isValidImageUrl(url) {
   return typeof url === 'string' && URL_RE.test(url);
 }
@@ -34,18 +34,18 @@ async function saveImage(buf, dir, kind) {
   return `/uploads/${kind}/${name}`;
 }
 
-const savePrizeImage = (buf) => saveImage(buf, PRIZE_DIR, 'prizes');
+const saveShopImage = (buf) => saveImage(buf, SHOP_DIR, 'shop');
 const saveProofImage = (buf) => saveImage(buf, PROOF_DIR, 'proofs');
 
 /** Faylni o'chiradi (xato asosiy oqimni buzmaydi). Faqat validatsiyadan o'tgan yo'l o'chiriladi. */
 async function deleteImage(url) {
   if (!isValidImageUrl(url)) return;
   try {
-    const dir = url.startsWith('/uploads/proofs/') ? PROOF_DIR : PRIZE_DIR;
+    const dir = url.startsWith('/uploads/proofs/') ? PROOF_DIR : SHOP_DIR;
     await fs.promises.unlink(path.join(dir, path.basename(url)));
   } catch (err) {
-    if (err.code !== 'ENOENT') logger.warn({ err: err.message, url }, 'Sovrin rasmini o\'chirib bo\'lmadi');
+    if (err.code !== 'ENOENT') logger.warn({ err: err.message, url }, 'Rasmni o\'chirib bo\'lmadi');
   }
 }
 
-module.exports = { detectType, isValidImageUrl, savePrizeImage, saveProofImage, deleteImage };
+module.exports = { detectType, isValidImageUrl, saveShopImage, saveProofImage, deleteImage };

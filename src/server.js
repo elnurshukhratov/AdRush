@@ -4,19 +4,13 @@ const config = require('./config');
 const logger = require('./utils/logger');
 const { connectDb, disconnectDb } = require('./db/prisma');
 const { getRedis, disconnectRedis } = require('./db/redis');
-const { getActive } = require('./services/competition/competitionService');
 const { createApp } = require('./app');
-const { createBot, createWebhookHandler, startBot, stopBot, notifyAdmins } = require('./bot');
-const { startMonthRollover } = require('./jobs/monthRollover');
+const { createBot, createWebhookHandler, startBot, stopBot } = require('./bot');
 const { startMaintenance } = require('./jobs/maintenance');
-const { closeReportText } = require('./bot/notifications');
 
 async function main() {
   await connectDb();
   getRedis(); // REDIS_URL bo'lsa ulanishni boshlaydi (rate limiterlar app yaratilishidan oldin tayyor bo'lishi uchun)
-
-  const competition = await getActive();
-  logger.info(competition ? `Faol competition: "${competition.title}" (#${competition.id})` : 'Faol competition yo\'q (admin Mine App ichidan yaratadi)');
 
   const state = { shuttingDown: false };
   const bot = createBot();
@@ -33,11 +27,6 @@ async function main() {
 
   await startBot(bot);
 
-  // Vaqti tugagan faol competition ni avtomatik tugatadi (g'oliblar sovrin place bo'yicha) va adminlarga xabar beradi
-  const rollover = startMonthRollover({
-    notify: (result) => notifyAdmins(bot, closeReportText(result, { auto: true })),
-  });
-
   const maintenance = startMaintenance();
 
   async function shutdown(signal) {
@@ -53,7 +42,6 @@ async function main() {
 
     try {
       await stopBot(bot);
-      await rollover.stop();
       await maintenance.stop();
       await new Promise((resolve) => {
         server.close(resolve); // yangi ulanish qabul qilinmaydi, bajarilayotgan so'rovlar tugaydi

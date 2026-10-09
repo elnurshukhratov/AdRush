@@ -12,7 +12,7 @@ const { fail, award, runTx } = require('./rewardCore');
  *
  * Ketma-ketlik (hammasi bitta tranzaksiya + user bo'yicha advisory lock ichida):
  *  1. Sessiya shu userniki va PENDING ekanini tekshirish (boshqa holat -> DUPLICATE_REWARD / EXPIRED / REJECTED)
- *  2. Muddat, minimal ko'rish vaqti, cooldown (competition ochiqligi endi shart emas — reklama Rush Coin beradi)
+ *  2. Muddat, minimal ko'rish vaqti, cooldown
  *  3. client_session rejimi: darhol award()
  *     server_confirmed rejimi: AdsGram Reward URL tasdig'i bor bo'lsa award(), yo'q bo'lsa sessiya CLAIMED
  *     bo'lib tasdiq kutadi (tasdiq kelganda registerAdsgramConfirmation() yakunlaydi)

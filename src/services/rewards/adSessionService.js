@@ -3,7 +3,6 @@
 const { prisma } = require('../../db/prisma');
 const config = require('../../config');
 const { lockUser } = require('../../utils/dbLock');
-const { getActive } = require('../competition/competitionService');
 const { getClientConfig } = require('../adsgram/adsgramService');
 const { fail, runTx } = require('./rewardCore');
 
@@ -11,11 +10,9 @@ const { fail, runTx } = require('./rewardCore');
  * Reklama ko'rishdan OLDIN server sessiya ochadi. Reward faqat shu sessiya orqali hisoblanadi,
  * shuning uchun klient o'zi "reward ID" o'ylab topa olmaydi.
  * Bitta userda bir vaqtda bitta PENDING sessiya: yangisi eskisini EXPIRED qiladi.
- * Reklama Rush Coin beradi, shuning uchun faol competition SHART EMAS (bo'lsa sessiyaga ma'lumot sifatida yoziladi).
  */
 async function createSession(user) {
   const now = new Date();
-  const competition = await getActive();
 
   const result = await runTx(async (tx) => {
     await lockUser(tx, user.telegramId);
@@ -28,7 +25,6 @@ async function createSession(user) {
     const session = await tx.adSession.create({
       data: {
         userId: user.id,
-        competitionId: competition ? competition.id : null,
         expiresAt: new Date(now.getTime() + config.ads.sessionTtlMs),
       },
     });

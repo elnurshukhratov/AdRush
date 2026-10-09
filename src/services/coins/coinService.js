@@ -6,17 +6,22 @@ const config = require('../../config');
 const auditService = require('../audit/auditService');
 const { isUniqueViolation } = require('../../utils/dbErrors');
 
-/** Rush Coin harakati turlari (prisma enum CoinTxType bilan bir xil). */
+/** Ledger harakati turlari (prisma enum CoinTxType ning ilova ishlatadigan qismi). */
 const COIN_TX = Object.freeze({
   ADS_REWARD: 'ADS_REWARD',
   REFERRAL_REWARD: 'REFERRAL_REWARD',
-  COMPETITION_BET: 'COMPETITION_BET',
-  LOSS_REFUND: 'LOSS_REFUND',
-  COMPETITION_WIN: 'COMPETITION_WIN',
   SUBSCRIBE_REWARD: 'SUBSCRIBE_REWARD',
   TRANSFER_OUT: 'TRANSFER_OUT',
   TRANSFER_IN: 'TRANSFER_IN',
+  CONVERT_OUT: 'CONVERT_OUT',
+  CONVERT_IN: 'CONVERT_IN',
+  SHOP_PURCHASE: 'SHOP_PURCHASE',
+  SHOP_REFUND: 'SHOP_REFUND',
 });
+
+/** Ledger valyutalari (prisma enum CoinCurrency) va ularga mos User ustuni. */
+const CURRENCY = Object.freeze({ RUSH: 'RUSH', DIAMOND: 'DIAMOND' });
+const CURRENCY_FIELD = Object.freeze({ RUSH: 'rushCoins', DIAMOND: 'diamonds' });
 
 const TX_OPTS = Object.freeze({ maxWait: 5000, timeout: 10000 });
 
@@ -38,27 +43,30 @@ function startOfUtcDay(d) {
 
 /**
  * Tranzaksiya (tx) ICHIDA user balansini o'zgartiradi va ledger (CoinTransaction) yozadi.
+ *  - currency: 'RUSH' (default, User.rushCoins) yoki 'DIAMOND' (User.diamonds).
  *  - amount > 0: kirim, amount < 0: chiqim. Chiqimda balans yetmasa { ok:false, reason:'INSUFFICIENT_FUNDS' } (hech narsa yozilmaydi).
- *  - Balans atomik UPDATE ... SET rushCoins = rushCoins + N orqali o'zgaradi (read-modify-write emas);
- *    chiqimda `rushCoins >= N` sharti shu UPDATE ning o'zida, shuning uchun parallel so'rovlar balansni manfiy qila olmaydi.
+ *  - Balans atomik UPDATE ... SET <balans> = <balans> + N orqali o'zgaradi (read-modify-write emas);
+ *    chiqimda `<balans> >= N` sharti shu UPDATE ning o'zida, shuning uchun parallel so'rovlar balansni manfiy qila olmaydi.
  *  - idempotencyKey UNIQUE: bir hodisa ikkinchi marta yozilsa Prisma P2002 tashlaydi — chaqiruvchi tranzaksiyasi rollback bo'ladi.
  * Chaqiruvchi tranzaksiyani o'zi boshqaradi: ok:false qaytsa ham o'zi qaror qiladi (rollback uchun throw yoki return).
  */
-async function applyCoins(tx, { userId, amount, type, idempotencyKey, refType = null, refId = null, competitionId = null }) {
+async function applyCoins(tx, { userId, amount, type, idempotencyKey, refType = null, refId = null, currency = CURRENCY.RUSH }) {
   if (!Number.isSafeInteger(amount) || amount === 0) throw new Error('applyCoins: amount nolga teng bo\'lmagan butun son bo\'lishi kerak');
   if (!COIN_TX[type]) throw new Error(`applyCoins: noma'lum tur: ${type}`);
+  const field = CURRENCY_FIELD[currency];
+  if (!field) throw new Error(`applyCoins: noma'lum valyuta: ${currency}`);
   if (!idempotencyKey) throw new Error('applyCoins: idempotencyKey majburiy');
 
-  const where = amount < 0 ? { id: userId, rushCoins: { gte: -amount } } : { id: userId };
-  const res = await tx.user.updateMany({ where, data: { rushCoins: { increment: amount } } });
+  const where = amount < 0 ? { id: userId, [field]: { gte: -amount } } : { id: userId };
+  const res = await tx.user.updateMany({ where, data: { [field]: { increment: amount } } });
   if (res.count !== 1) return { ok: false, reason: 'INSUFFICIENT_FUNDS' };
 
   await tx.coinTransaction.create({
-    data: { userId, amount, type, idempotencyKey, refType, refId: refId == null ? null : String(refId), competitionId },
+    data: { userId, amount, currency, type, idempotencyKey, refType, refId: refId == null ? null : String(refId) },
   });
 
-  const row = await tx.user.findUnique({ where: { id: userId }, select: { rushCoins: true } });
-  return { ok: true, balance: row.rushCoins };
+  const row = await tx.user.findUnique({ where: { id: userId }, select: { [field]: true } });
+  return { ok: true, balance: row[field], currency };
 }
 
 async function getBalance(userId, client = prisma) {
@@ -66,13 +74,22 @@ async function getBalance(userId, client = prisma) {
   return row ? row.rushCoins : 0;
 }
 
-/** Foydalanuvchining Rush Coin tarixi (yangisi birinchi). cursor = oxirgi ko'rilgan id. */
+/** Ikkala balans: { rushCoins, diamonds }. */
+async function getBalances(userId, client = prisma) {
+  const row = await client.user.findUnique({ where: { id: userId }, select: { rushCoins: true, diamonds: true } });
+  return { rushCoins: row ? row.rushCoins : 0, diamonds: row ? row.diamonds : 0 };
+}
+
+/**
+ * Foydalanuvchining tarixi (Rush Coin va olmos, yangisi birinchi). cursor = oxirgi ko'rilgan id.
+ * Faqat ilova ishlatadigan turlar (COIN_TX) qaytadi; eski yozuvlar bazada qoladi, lekin ko'rsatilmaydi.
+ */
 async function getHistory(userId, { limit = 20, cursor = null } = {}) {
   const rows = await prisma.coinTransaction.findMany({
-    where: { userId, ...(cursor ? { id: { lt: BigInt(cursor) } } : {}) },
+    where: { userId, type: { in: Object.values(COIN_TX) }, ...(cursor ? { id: { lt: BigInt(cursor) } } : {}) },
     orderBy: { id: 'desc' },
     take: limit + 1,
-    select: { id: true, amount: true, type: true, createdAt: true, competitionId: true },
+    select: { id: true, amount: true, currency: true, type: true, createdAt: true },
   });
   const hasMore = rows.length > limit;
   const page = hasMore ? rows.slice(0, limit) : rows;
@@ -80,8 +97,8 @@ async function getHistory(userId, { limit = 20, cursor = null } = {}) {
     items: page.map((r) => ({
       id: r.id.toString(),
       amount: r.amount,
+      currency: r.currency,
       type: r.type,
-      competitionId: r.competitionId,
       createdAt: r.createdAt.toISOString(),
     })),
     nextCursor: hasMore ? page[page.length - 1].id.toString() : null,
@@ -187,4 +204,4 @@ async function transferCoins(fromUserId, toTelegramId, amount, requestKey) {
   }
 }
 
-module.exports = { COIN_TX, applyCoins, getBalance, getHistory, transferCoins };
+module.exports = { COIN_TX, CURRENCY, TX_OPTS, TxAbort, fail, applyCoins, getBalance, getBalances, getHistory, transferCoins };

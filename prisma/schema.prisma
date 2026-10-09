@@ -7,35 +7,27 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-enum CompetitionStatus {
-  DRAFT     // admin tayyorlayapti, reward qabul qilinmaydi
-  ACTIVE    // reward qabul qilinadi (bir vaqtda faqat bitta ACTIVE — DB darajasida kafolatlangan)
-  ENDED     // tugagan: reward qabul qilinmaydi, g'oliblar aniqlangan
-  ARCHIVED  // arxivlangan (ma'lumotlar saqlanadi)
-}
-
-enum WinnerStatus {
-  PENDING    // g'olib aniqlandi
-  CONTACTED  // g'olib bilan bog'lanildi
-  DELIVERED  // sovrin topshirildi
-  CANCELLED  // bekor qilindi (diskvalifikatsiya va h.k.)
-}
-
-enum PrizeStatus {
-  ACTIVE    // foydalanuvchilarga ko'rinadi va g'olibga biriktiriladi
-  INACTIVE  // yashirin
-}
-
 // Reklama ko'rish sessiyasi holati (server tomonida boshqariladi)
 enum AdSessionStatus {
   PENDING   // server sessiya ochdi, reklama ko'rilmoqda
   CLAIMED   // klient "ko'rdim" dedi, AdsGram server tasdig'i (Reward URL) kutilmoqda
-  REWARDED  // hisoblandi (+1 valid reklama)
+  REWARDED  // hisoblandi (+olmos)
   EXPIRED   // muddati o'tdi / yangi sessiya bilan almashtirildi
   REJECTED  // shubhali (masalan juda tez claim) — hisoblanmaydi
 }
 
-// Rush Coin harakati turi (ledger). Nomlar: ADS_REWARD (+), REFERRAL_REWARD (+), COMPETITION_BET (-), LOSS_REFUND (+), COMPETITION_WIN (+, coin bilan to'lanadigan yutuq uchun), TRANSFER_OUT (-) / TRANSFER_IN (+) — foydalanuvchilar orasida o'tkazma (ikkala yozuv refType='TRANSFER' va bir xil refId bilan bog'langan)
+// Ledger valyutasi: RUSH = Rush Coin (User.rushCoins), DIAMOND = Olmos (User.diamonds)
+enum CoinCurrency {
+  RUSH
+  DIAMOND
+}
+
+// Ledger harakati turi.
+//  ADS_REWARD (+olmos), REFERRAL_REWARD (+olmos), SUBSCRIBE_REWARD (+Rush),
+//  TRANSFER_OUT (-Rush) / TRANSFER_IN (+Rush) — foydalanuvchilar orasida o'tkazma (ikkala yozuv refType='TRANSFER' va bir xil refId bilan bog'langan),
+//  CONVERT_OUT (-olmos) / CONVERT_IN (+Rush) — olmosni Rush Coin ga almashtirish (refType='CONVERT', bir xil refId),
+//  SHOP_PURCHASE (-Rush) / SHOP_REFUND (+Rush) — do'kon.
+// COMPETITION_BET, LOSS_REFUND, COMPETITION_WIN — eski yozuvlar uchun saqlangan (bazada qoladi, ilova ko'rsatmaydi).
 enum CoinTxType {
   ADS_REWARD
   REFERRAL_REWARD
@@ -45,13 +37,26 @@ enum CoinTxType {
   SUBSCRIBE_REWARD
   TRANSFER_OUT
   TRANSFER_IN
+  CONVERT_OUT
+  CONVERT_IN
+  SHOP_PURCHASE
+  SHOP_REFUND
 }
 
-// Tikish holati: ACTIVE (competition davom etmoqda) -> WON (sovrin oldi) | LOST (yutqazdi, 30% qaytarildi)
-enum BetStatus {
-  ACTIVE
-  WON
-  LOST
+// Do'kon mahsuloti turi: faqat belgi/kategoriya, mantiqni o'zgartirmaydi
+enum ShopKind {
+  GIFT
+  STARS
+  PREMIUM
+  CUSTOM
+}
+
+// Do'kon buyurtmasi holati. DELIVERED / CANCELLED dan keyin o'zgarmaydi.
+enum ShopOrderStatus {
+  PENDING
+  PROCESSING
+  DELIVERED
+  CANCELLED
 }
 
 enum AdminRole {
@@ -69,17 +74,17 @@ model User {
   language   String?
   // Rush Coin balansi — faqat server o'zgartiradi (CoinTransaction ledger bilan birga, bitta tranzaksiyada)
   rushCoins  Int       @default(0)
+  // Olmos balansi — faqat server o'zgartiradi (ledger bilan birga). Olmos reklama va referaldan olinadi, Rush Coin ga almashtiriladi.
+  diamonds   Int       @default(0)
   // Kim taklif qilgani (referral). Faqat bir marta, yangi user /start qilganda yoziladi.
   referredByUserId Int?
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
 
   rewards  AdReward[]
-  stats    MonthlyStat[]
-  wins     Winner[]
   sessions AdSession[]
   coinTxs  CoinTransaction[]
-  bets     CompetitionBet[]
+  shopOrders ShopOrder[]
 
   referredBy User?  @relation("Referral", fields: [referredByUserId], references: [id], onDelete: SetNull)
   referrals  User[] @relation("Referral")
@@ -88,117 +93,37 @@ model User {
   @@index([referredByUserId])
 }
 
-// Admin yaratadigan competition (nomi tarixiy: avval oylik edi). year/month — startAt (UTC) dan hosil qilinadi,
-// eski kod/ma'lumotlar bilan moslik uchun saqlangan; endi unique emas.
-// DB da qo'shimcha: partial unique index "MonthlyCompetition_single_active" — bir vaqtda faqat bitta ACTIVE.
-model MonthlyCompetition {
-  id          Int               @id @default(autoincrement())
-  title       String
-  description String?
-  year        Int
-  month       Int // 1..12
-  startAt     DateTime
-  endAt       DateTime // exclusive
-  status      CompetitionStatus @default(DRAFT)
-  lockedAt    DateTime? // ENDED bo'lgan vaqt
-  archivedAt  DateTime?
-  createdAt   DateTime          @default(now())
-  updatedAt   DateTime          @default(now()) @updatedAt
-
-  rewards  AdReward[]
-  stats    MonthlyStat[]
-  winners  Winner[]
-  sessions AdSession[]
-  prizes   Prize[]
-  bets     CompetitionBet[]
-
-  @@index([status])
-  @@index([status, endAt])
-  @@index([startAt])
-}
-
 model AdReward {
   id               BigInt   @id @default(autoincrement())
   userId           Int
-  // Reklama endi Rush Coin beradi va competitionga bog'liq emas; shuning uchun ixtiyoriy (eski yozuvlarda to'liq)
-  competitionId    Int?
   // Unikal reward kaliti (duplicate/replay himoyasi). AdsGram rasmiy hujjatida reward/event ID
   // BERILMAYDI, shuning uchun bu yerda BIZ yaratgan AdSession.id saqlanadi.
   externalRewardId String   @unique
   createdAt        DateTime @default(now())
   metadata         Json?
 
-  user        User                @relation(fields: [userId], references: [id], onDelete: Restrict)
-  competition MonthlyCompetition? @relation(fields: [competitionId], references: [id], onDelete: Restrict)
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
 
-  @@index([userId, competitionId])
-  @@index([competitionId, createdAt])
   // cooldown (oxirgi reward) va kunlik limit (userId + createdAt oralig'i) so'rovlari uchun
   @@index([userId, createdAt(sort: Desc)])
 }
 
-model MonthlyStat {
-  id            Int      @id @default(autoincrement())
-  userId        Int
-  competitionId Int
-  // Nomi tarixiy: endi bu competition BALLI = shu competitionga tikilgan Rush Coin yig'indisi (reyting shu bo'yicha)
-  validAds      Int      @default(0)
-  // Oy yopilganda final rank shu yerga yoziladi (jonli rank DB so'rovi bilan hisoblanadi)
-  rank          Int?
-  updatedAt     DateTime @updatedAt
-
-  user        User               @relation(fields: [userId], references: [id], onDelete: Restrict)
-  competition MonthlyCompetition @relation(fields: [competitionId], references: [id], onDelete: Restrict)
-
-  @@unique([userId, competitionId])
-  // Leaderboard: validAds kamayish, tenglikda avval yetganga ustunlik
-  @@index([competitionId, validAds(sort: Desc), updatedAt(sort: Asc)])
-}
-
-model Winner {
-  id            Int          @id @default(autoincrement())
-  competitionId Int
-  userId        Int
-  place         Int // prize.place bilan bir xil
-  prizeId       Int?
-  prize         String // aniqlangan paytdagi sovrin nomi (snapshot — sovrin keyin o'zgarsa/o'chsa ham saqlanadi)
-  status        WinnerStatus @default(PENDING)
-  note          String? // admin izohi (bog'lanish tafsilotlari va h.k.)
-  // Sovrin topshirilganini tasdiqlovchi rasm (faqat admin yuklaydi): /uploads/proofs/<uuid>.<jpg|png|webp>
-  proofImage      String?
-  proofUploadedAt DateTime?
-  createdAt     DateTime     @default(now())
-  updatedAt     DateTime     @default(now()) @updatedAt
-
-  competition MonthlyCompetition @relation(fields: [competitionId], references: [id], onDelete: Restrict)
-  user        User               @relation(fields: [userId], references: [id], onDelete: Restrict)
-  prizeRef    Prize?             @relation(fields: [prizeId], references: [id], onDelete: SetNull)
-
-  @@unique([competitionId, place])
-  @@unique([competitionId, userId])
-  @@index([status])
-  @@index([userId])
-}
-
 // Server ochgan reklama sessiyasi: har bir reward faqat bitta sessiyaga bog'lanadi
 model AdSession {
-  id            String          @id @default(uuid()) @db.Uuid
-  userId        Int
-  competitionId Int? // ixtiyoriy: Rush Coin uchun faol competition shart emas
-  status        AdSessionStatus @default(PENDING)
-  createdAt     DateTime        @default(now())
-  expiresAt     DateTime
-  claimedAt     DateTime?
-  rewardedAt    DateTime?
-  rejectReason  String?
+  id           String          @id @default(uuid()) @db.Uuid
+  userId       Int
+  status       AdSessionStatus @default(PENDING)
+  createdAt    DateTime        @default(now())
+  expiresAt    DateTime
+  claimedAt    DateTime?
+  rewardedAt   DateTime?
+  rejectReason String?
 
   user         User                 @relation(fields: [userId], references: [id], onDelete: Restrict)
-  competition  MonthlyCompetition?  @relation(fields: [competitionId], references: [id], onDelete: Restrict)
   confirmation AdsgramConfirmation?
 
   @@index([userId, status])
   @@index([status, expiresAt])
-  @@index([competitionId, status])
 }
 
 // AdsGram Reward URL (server-to-server GET) orqali kelgan tasdiqlar.
@@ -215,41 +140,19 @@ model AdsgramConfirmation {
   @@index([telegramId, receivedAt])
 }
 
-// Sovrinlar kodda hardcode qilinmaydi: admin Mine App ichidan har bir competition uchun yaratadi.
-// place = reytingdagi o'rin (1 = birinchi). Competition tugaganda place bo'yicha g'olibga biriktiriladi.
-model Prize {
-  id            Int         @id @default(autoincrement())
-  competitionId Int
-  place         Int
-  title         String
-  description   String?
-  imageUrl      String? // faqat bizning /uploads/prizes/... yo'li
-  value         String? // erkin matn: "500$", "≈ 450 000 so'm"
-  quantity      Int         @default(1)
-  status        PrizeStatus @default(ACTIVE)
-  createdAt     DateTime    @default(now())
-  updatedAt     DateTime    @updatedAt
-
-  competition MonthlyCompetition @relation(fields: [competitionId], references: [id], onDelete: Restrict)
-  winners     Winner[]
-
-  @@unique([competitionId, place])
-  @@index([competitionId, status])
-}
-
-// Rush Coin ledger: har bir balans o'zgarishi shu yerda (amount: + kirim, - chiqim). Faqat qo'shiladi.
-// idempotencyKey UNIQUE: bir hodisa (reklama sessiyasi, referral, tikish, refund) ikki marta yozilmaydi.
-//   ADS_REWARD:<sessionId> | REFERRAL_REWARD:<yangiUserId> | COMPETITION_BET:<betId|requestId> | LOSS_REFUND:<betId>
+// Ledger: har bir balans o'zgarishi shu yerda (amount: + kirim, - chiqim; currency: qaysi balans). Faqat qo'shiladi.
+// idempotencyKey UNIQUE: bir hodisa (reklama sessiyasi, referral, almashtirish, xarid, refund) ikki marta yozilmaydi.
+//   ADS_REWARD:<sessionId> | REFERRAL_REWARD:<yangiUserId> | CONVERT_OUT:<userId>:<requestId> | CONVERT_IN:<userId>:<requestId> | ...
 model CoinTransaction {
-  id             BigInt     @id @default(autoincrement())
+  id             BigInt       @id @default(autoincrement())
   userId         Int
   amount         Int
+  currency       CoinCurrency @default(RUSH)
   type           CoinTxType
-  idempotencyKey String     @unique
+  idempotencyKey String       @unique
   refType        String?
   refId          String?
-  competitionId  Int?
-  createdAt      DateTime   @default(now())
+  createdAt      DateTime     @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Restrict)
 
@@ -257,23 +160,47 @@ model CoinTransaction {
   @@index([userId, type])
 }
 
-// Foydalanuvchining competitionga tikishi (bir vaqtda ko'pi bilan MAX_ACTIVE_BETS ta ACTIVE)
-model CompetitionBet {
-  id            BigInt    @id @default(autoincrement())
-  userId        Int
-  competitionId Int
-  amount        Int
-  status        BetStatus @default(ACTIVE)
-  refundAmount  Int       @default(0) // LOST bo'lganda qaytarilgan miqdor (amount * LOSS_REFUND_PERCENT / 100)
-  createdAt     DateTime  @default(now())
-  resolvedAt    DateTime?
+// Do'kon mahsuloti: hammasini admin qo'shadi (seed hech narsa qo'shmaydi). stock = null -> cheksiz.
+model ShopProduct {
+  id          Int      @id @default(autoincrement())
+  title       String
+  description String?
+  // Faqat bizning /uploads/shop/... yo'li
+  imageUrl    String?
+  priceRush   Int
+  kind        ShopKind @default(CUSTOM)
+  stock       Int?
+  isActive    Boolean  @default(true)
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
-  user        User               @relation(fields: [userId], references: [id], onDelete: Restrict)
-  competition MonthlyCompetition @relation(fields: [competitionId], references: [id], onDelete: Restrict)
+  orders ShopOrder[]
 
-  @@index([userId, status])
-  @@index([competitionId, status])
-  @@index([competitionId, userId])
+  @@index([isActive, sortOrder])
+}
+
+// Buyurtma: mahsulot snapshoti (nom, tur, narx) xarid paytida saqlanadi — mahsulot keyin o'zgarsa/o'chsa ham tarix qoladi.
+model ShopOrder {
+  id           Int             @id @default(autoincrement())
+  userId       Int
+  productId    Int?
+  productTitle String
+  productKind  ShopKind
+  priceRush    Int
+  status       ShopOrderStatus @default(PENDING)
+  adminNote    String?
+  proofImage   String?
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+  resolvedAt   DateTime?
+
+  user    User         @relation(fields: [userId], references: [id], onDelete: Restrict)
+  product ShopProduct? @relation(fields: [productId], references: [id], onDelete: SetNull)
+
+  @@index([userId, id(sort: Desc)])
+  @@index([status, id(sort: Desc)])
+  @@index([productId])
 }
 
 model Admin {
@@ -285,7 +212,7 @@ model Admin {
 }
 
 // Audit + shubhali activity jurnali (faqat qo'shiladi, o'chirilmaydi).
-// action: ADMIN_*, COMPETITION_CLOSED, WINNER_STATUS_CHANGED, USER_BLOCKED, SUSPICIOUS:<TYPE> ...
+// action: ADMIN_*, USER_BLOCKED, COIN_TRANSFER, SUSPICIOUS:<TYPE> ...
 model AuditLog {
   id              BigInt   @id @default(autoincrement())
   actorTelegramId BigInt?

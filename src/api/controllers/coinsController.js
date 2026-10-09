@@ -3,7 +3,8 @@
 const { z } = require('zod');
 const config = require('../../config');
 const { ApiError, asyncHandler } = require('../../utils/apiError');
-const { getHistory, getBalance, transferCoins } = require('../../services/coins/coinService');
+const { getHistory, getBalances, transferCoins } = require('../../services/coins/coinService');
+const { convertDiamonds } = require('../../services/coins/convertService');
 
 // Faqat toTelegramId, amount va requestId qabul qilinadi: yuboruvchi va balans bodyda KERAK EMAS (identifikatsiya — telegramAuth)
 const transferSchema = z
@@ -14,6 +15,20 @@ const transferSchema = z
     requestId: z.string().uuid(), // klient yaratgan UUID — idempotentlik uchun
   })
   .strict();
+
+// Olmos -> Rush Coin: faqat olmos miqdori va requestId. Rush miqdori serverda hisoblanadi (kurs configda)
+const CONVERT_MAX = 1_000_000;
+const convertSchema = z
+  .object({
+    diamonds: z.number().int().min(1).max(CONVERT_MAX),
+    requestId: z.string().uuid(), // klient yaratgan UUID — idempotentlik uchun
+  })
+  .strict();
+
+const CONVERT_FAIL = Object.freeze({
+  INSUFFICIENT_FUNDS: [402, 'Olmos yetarli emas'],
+  DUPLICATE_REQUEST: [409, 'Bu almashtirish allaqachon qabul qilingan'],
+});
 
 const TRANSFER_FAIL = Object.freeze({
   USER_NOT_FOUND: [404, 'Bunday foydalanuvchi topilmadi'],
@@ -33,14 +48,39 @@ const querySchema = z
 
 /**
  * GET /api/coins/history?limit=20&cursor=<id>
- * Faqat o'zining Rush Coin tarixi: +5 ADS_REWARD, +20 REFERRAL_REWARD, -50 COMPETITION_BET, +30 LOSS_REFUND ...
+ * Faqat o'zining tarixi (Rush Coin va olmos): har bir yozuvda currency ('RUSH' | 'DIAMOND') bor.
  */
 const history = asyncHandler(async (req, res) => {
   const { limit, cursor } = querySchema.parse(req.query);
   const userId = req.auth.user.id;
-  const [page, rushCoins] = await Promise.all([getHistory(userId, { limit, cursor }), getBalance(userId)]);
+  const [page, balances] = await Promise.all([getHistory(userId, { limit, cursor }), getBalances(userId)]);
   res.set('Cache-Control', 'private, no-store');
-  res.json({ success: true, rushCoins, ...page });
+  res.json({ success: true, ...balances, ...page });
+});
+
+/**
+ * POST /api/coins/convert { diamonds, requestId }
+ * Olmosni Rush Coin ga almashtiradi (1 olmos = DIAMOND_TO_RUSH Rush). Javob: { success, diamonds, rushCoins (yangi balanslar), converted:{ diamonds, rush } }.
+ * Xatolar standart formatda: INSUFFICIENT_FUNDS | DUPLICATE_REQUEST | INVALID_AMOUNT.
+ */
+const convert = asyncHandler(async (req, res) => {
+  const parsed = convertSchema.safeParse(req.body);
+  if (!parsed.success) {
+    if (parsed.error.issues.some((i) => i.path[0] === 'diamonds')) {
+      throw new ApiError(400, 'INVALID_AMOUNT', 'Miqdor noto\'g\'ri', { min: 1, max: CONVERT_MAX });
+    }
+    throw parsed.error;
+  }
+  const { diamonds, requestId } = parsed.data;
+
+  const result = await convertDiamonds(req.auth.user, diamonds, requestId);
+  res.set('Cache-Control', 'private, no-store');
+  if (!result.success) {
+    const [status, message] = CONVERT_FAIL[result.reason] || [400, 'Almashtirish amalga oshmadi'];
+    const { success: _s, reason, ...extra } = result; // joriy balanslar klientga ketadi
+    throw new ApiError(status, reason, message, extra);
+  }
+  return res.json(result);
 });
 
 /**
@@ -70,4 +110,4 @@ const transfer = asyncHandler(async (req, res) => {
   return res.json(result);
 });
 
-module.exports = { history, transfer };
+module.exports = { history, transfer, convert };

@@ -4,7 +4,7 @@ const { asyncHandler } = require('../../utils/apiError');
 const { getMyReferrals } = require('../../services/referrals/referralService');
 
 /**
- * GET /api/referrals/me — referral havolam, taklif qilganlar soni va referral orqali olingan Rush Coin.
+ * GET /api/referrals/me — referral havolam, taklif qilganlar soni va referral orqali olingan olmos.
  * Referral mukofoti faqat botda (yangi user /start ref_<id>) beriladi; bu endpoint faqat o'qiydi.
  */
 const me = asyncHandler(async (req, res) => {

@@ -14,7 +14,7 @@ function parseAdminIds(raw) {
 
 /**
  * Seed faqat adminlarni (.env ADMIN_IDS) yaratadi. Idempotent: mavjudlarga tegmaydi.
- * Competition va sovrinlar kodda/seedda HARDCODE QILINMAYDI — admin ularni Mine App ichidan yaratadi.
+ * Do'kon mahsulotlari kodda/seedda HARDCODE QILINMAYDI — seed hech qanday mahsulot qo'shmaydi, admin ularni Mine App ichidan qo'shadi.
  */
 async function main() {
   const adminIds = parseAdminIds(process.env.ADMIN_IDS);

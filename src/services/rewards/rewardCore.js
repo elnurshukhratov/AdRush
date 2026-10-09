@@ -2,7 +2,7 @@
 
 const { prisma } = require('../../db/prisma');
 const config = require('../../config');
-const { applyCoins, COIN_TX } = require('../coins/coinService');
+const { applyCoins, COIN_TX, CURRENCY } = require('../coins/coinService');
 
 const TX_OPTS = Object.freeze({ maxWait: 5000, timeout: 10000 });
 
@@ -15,22 +15,7 @@ function startOfUtcDay(d) {
 }
 
 /**
- * Competition ochiqmi (ACTIVE va startAt <= now < endAt)? FOR SHARE: yopish/tahrirlash tranzaksiyalari (FOR UPDATE)
- * shu tranzaksiyalar tugaguncha kutadi, yopilgandan keyin esa yangi reward o'tmaydi.
- */
-async function isCompetitionOpen(tx, competitionId, now) {
-  const rows = await tx.$queryRaw`
-    SELECT "status"::text AS "status", "startAt", "endAt"
-    FROM "MonthlyCompetition"
-    WHERE "id" = ${competitionId}
-    FOR SHARE`;
-  const c = rows[0];
-  return Boolean(c) && c.status === 'ACTIVE' && now >= c.startAt && now < c.endAt;
-}
-
-/**
- * Tranzaksiya ichida: dailyCap -> AdReward yaratadi -> user balansiga +RUSH_AD_REWARD (ledger bilan) -> sessiyani REWARDED qiladi.
- * Reklama endi competition ballini oshirmaydi: u Rush Coin beradi, tikishni user o'zi qiladi.
+ * Tranzaksiya ichida: dailyCap -> AdReward yaratadi -> user balansiga +DIAMOND_PER_AD olmos (ledger bilan) -> sessiyani REWARDED qiladi.
  * Hammasi bitta tranzaksiya: biror qadam yiqilsa hech narsa yozilmaydi.
  * Chaqiruvchi lockUser() ni ushlab turgan bo'lishi shart.
  * Eslatma: DB xatosi (masalan unique) tranzaksiyani buzadi, shuning uchun bu yerda ushlanmaydi — runTx ushlaydi.
@@ -49,18 +34,17 @@ async function award(tx, session, now, meta) {
     }
   }
 
-  const coins = config.rush.adReward;
+  const diamonds = config.diamond.perAd;
 
   await tx.adReward.create({
     data: {
       userId: session.userId,
-      competitionId: session.competitionId || null,
       externalRewardId: session.id, // UNIQUE — duplicate/replay ning DB darajasidagi kafolati
       metadata: {
         verifyMode: config.adsgram.verifyMode,
         sessionCreatedAt: session.createdAt.toISOString(),
         elapsedMs: now.getTime() - session.createdAt.getTime(),
-        coins,
+        diamonds,
         ...meta,
       },
     },
@@ -68,18 +52,18 @@ async function award(tx, session, now, meta) {
 
   const credit = await applyCoins(tx, {
     userId: session.userId,
-    amount: coins,
+    amount: diamonds,
+    currency: CURRENCY.DIAMOND,
     type: COIN_TX.ADS_REWARD,
     idempotencyKey: `ADS_REWARD:${session.id}`, // ikkinchi himoya qatlami (AdReward.externalRewardId dan tashqari)
     refType: 'ad_session',
     refId: session.id,
-    competitionId: session.competitionId || null,
   });
   if (!credit.ok) throw new Error('ADS_REWARD_CREDIT_FAILED'); // +N hech qachon "yetarli emas" bo'lmaydi — bo'lsa rollback
 
   await tx.adSession.update({ where: { id: session.id }, data: { status: 'REWARDED', rewardedAt: now } });
 
-  return { success: true, status: 'REWARDED', counted: true, coins, rushCoins: credit.balance };
+  return { success: true, status: 'REWARDED', counted: true, reward: diamonds, diamonds: credit.balance };
 }
 
 /** Tranzaksiya wrapperi: externalRewardId unique buzilsa DUPLICATE_REWARD qaytaradi, qolganini tashlaydi. */
@@ -95,4 +79,4 @@ async function runTx(fn) {
   }
 }
 
-module.exports = { TX_OPTS, fail, award, runTx, isCompetitionOpen, startOfUtcDay };
+module.exports = { TX_OPTS, fail, award, runTx, startOfUtcDay };

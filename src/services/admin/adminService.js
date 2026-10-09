@@ -4,9 +4,6 @@ const { prisma } = require('../../db/prisma');
 const config = require('../../config');
 const { ApiError } = require('../../utils/apiError');
 const { record } = require('../audit/auditService');
-const { getActive, countParticipants } = require('../competition/competitionService');
-const { toAdmin } = require('../competition/competitionAdminService');
-const { startOfUtcDay } = require('../rewards/rewardCore');
 
 /**
  * Admin roli: .env dagi ADMIN_IDS -> SUPER_ADMIN, aks holda Admin jadvalidagi yozuv roli, aks holda null.
@@ -18,71 +15,26 @@ async function getAdminRole(telegramId) {
   return row ? row.role : null;
 }
 
-/** Dashboard: faol competition, userlar, valid reklamalar, ishtirokchilar, top o'yinchilar, sovrinlar soni. */
+/** Dashboard: userlar, bloklanganlar, shubhali faollik (24 soat), valid reklamalar va olmos/Rush Coin umumiy statistikasi. */
 async function getOverview() {
-  const active = await getActive();
   const dayAgo = new Date(Date.now() - 24 * 3600 * 1000);
 
-  const [totalUsers, blocked, lifetimeValidAds, suspicious24h, pendingWinners, competitionsTotal] = await Promise.all([
+  const [totalUsers, blocked, lifetimeValidAds, suspicious24h, balances] = await Promise.all([
     prisma.user.count(),
     prisma.user.count({ where: { isBlocked: true } }),
     prisma.adReward.count(),
     prisma.auditLog.count({ where: { action: { startsWith: 'SUSPICIOUS:' }, createdAt: { gte: dayAgo } } }),
-    prisma.winner.count({ where: { status: 'PENDING' } }),
-    prisma.monthlyCompetition.count(),
+    prisma.user.aggregate({ _sum: { diamonds: true, rushCoins: true } }),
   ]);
 
-  const daily = await getDailySeries(7);
-
-  let current = null;
-  if (active) {
-    const [participants, sum, rewardsToday, prizeCount, top] = await Promise.all([
-      countParticipants(active.id),
-      prisma.monthlyStat.aggregate({ where: { competitionId: active.id, user: { isBlocked: false } }, _sum: { validAds: true } }),
-      prisma.adReward.count({ where: { competitionId: active.id, createdAt: { gte: startOfUtcDay(new Date()) } } }),
-      prisma.prize.count({ where: { competitionId: active.id, status: 'ACTIVE' } }),
-      prisma.monthlyStat.findMany({
-        where: { competitionId: active.id, validAds: { gt: 0 }, user: { isBlocked: false } },
-        orderBy: [{ validAds: 'desc' }, { updatedAt: 'asc' }, { id: 'asc' }],
-        take: 5,
-        select: { validAds: true, user: { select: { telegramId: true, username: true, firstName: true } } },
-      }),
-    ]);
-    current = {
-      competition: toAdmin(active),
-      participants,
-      validAds: sum._sum.validAds || 0,
-      rewardsToday,
-      prizeCount,
-      topPlayers: top.map((t, i) => ({
-        rank: i + 1,
-        telegramId: t.user.telegramId.toString(),
-        username: t.user.username,
-        firstName: t.user.firstName,
-        validAds: t.validAds,
-      })),
-    };
-  }
-
-  return { current, totalUsers, blocked, lifetimeValidAds, suspicious24h, pendingWinners, competitionsTotal, daily };
-}
-
-/** Oxirgi `days` kun (UTC) bo'yicha valid reklamalar soni; reward bo'lmagan kunlar 0 bilan to'ldiriladi. */
-async function getDailySeries(days) {
-  const start = startOfUtcDay(new Date(Date.now() - (days - 1) * 24 * 3600 * 1000));
-  const rows = await prisma.$queryRaw`
-    SELECT to_char("createdAt", 'YYYY-MM-DD') AS day, COUNT(*)::int AS n
-    FROM "AdReward"
-    WHERE "createdAt" >= ${start}
-    GROUP BY 1`;
-  const byDay = new Map(rows.map((r) => [r.day, Number(r.n)]));
-  const out = [];
-  for (let i = 0; i < days; i += 1) {
-    const d = new Date(start.getTime() + i * 24 * 3600 * 1000);
-    const key = d.toISOString().slice(0, 10);
-    out.push({ day: key, validAds: byDay.get(key) || 0 });
-  }
-  return out;
+  return {
+    totalUsers,
+    blocked,
+    lifetimeValidAds,
+    suspicious24h,
+    totalDiamonds: balances._sum.diamonds || 0,
+    totalRushCoins: balances._sum.rushCoins || 0,
+  };
 }
 
 const AUDIT_KINDS = Object.freeze(['all', 'suspicious', 'admin']);
