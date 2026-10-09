@@ -1,0 +1,289 @@
+/* ===== AdRush — Apple Liquid Glass (iOS 26) v4 =====
+   mine.css dan KEYIN yuklanadi. Class, id va JS hook'lar o'zgarmagan.
+
+   IKKI QATLAM
+   (1) CONTENT  — karta, ro'yxat, podium, sovrin, forma, hero: shishasiz, to'liq zich fill.
+   (2) CONTROLS — tab bar, yuqori chip'lar, "Mening o'rnim" paneli, admin seg, sheet, toast, asosiy CTA: faqat Regular glass.
+
+   QOIDALAR
+   - Faqat Regular variant (Clear'ning 3 sharti bajarilmaydi: media-boy fon, dimming zararsiz, yorqin kontent).
+   - Glass ustiga glass yo'q: ichki indikator/tugmalar fill; nav indikatori faqat sudralganda glass'ga "ko'tariladi".
+   - Tint faqat bitta: asosiy CTA (reklama ko'rish).
+   - Kichik elementlar (tab bar) fonga qarab light/dark almashadi; katta (sheet, me-card) almashmaydi.
+   - Scroll edge effect: kontent tab bar va yuqori chip'lar ostida asta fonga eriydi.
+   - Accessibility: reduced transparency / increased contrast / reduced motion. */
+
+@property --ang{syntax:'<angle>';inherits:true;initial-value:135deg}
+@property --lit{syntax:'<number>';inherits:false;initial-value:0}
+@property --n-tint{syntax:'<color>';inherits:true;initial-value:rgba(0,0,0,0)}
+@property --n-fg{syntax:'<color>';inherits:true;initial-value:rgba(255,255,255,.6)}
+
+:root{
+  --font-body:-apple-system,BlinkMacSystemFont,"SF Pro Text","SF Pro Display",Inter,system-ui,"Segoe UI",Roboto,sans-serif;
+  --font-display:-apple-system,BlinkMacSystemFont,"SF Pro Display",Inter,system-ui,sans-serif;
+  --r-lg:26px; --nav-h:64px; --nav-gap:14px; --top-h:58px;
+  --ease:cubic-bezier(.2,.9,.25,1); --spring:cubic-bezier(.3,1.5,.5,1); --soft:cubic-bezier(.32,.72,0,1);
+  /* Regular material (yagona variant). Sheet — katta yuza, shuning uchun blur kuchliroq */
+  --m-regular:blur(22px) saturate(180%) brightness(1.04);
+  --m-sheet:blur(36px) saturate(190%) brightness(1.03);
+  --sp:0; --ang:135deg; --px:0; --py:0;
+}
+:root,[data-theme="dark"]{
+  --bg:#000; --bg-2:#0B0B12; --bg-3:#16161F;
+  --text:#fff; --hint:rgba(235,235,245,.66); --faint:rgba(235,235,245,.36);
+  --primary:#0A84FF; --link:#4DA3FF; --good:#30D158; --warn:#FFD60A; --bad:#FF453A;
+  /* CONTENT qatlami: zich fill, blur yo'q */
+  --card:#14141C; --card-2:#1F1F2A; --card-solid:#14141C; --field:rgba(255,255,255,.07);
+  --gloss:linear-gradient(transparent,transparent);
+  --line:rgba(255,255,255,.08); --line-strong:rgba(255,255,255,.17);
+  --card-shadow:0 14px 34px -20px rgba(0,0,0,.9); --shadow:0 18px 44px -18px rgba(0,0,0,.8);
+  /* CONTROLS qatlami: Regular glass */
+  --g-tint:rgba(44,46,66,.34); --g-glow:rgba(255,255,255,.15); --g-edge:rgba(255,255,255,.14);
+  --g-deep:rgba(0,0,0,.3); --g-drop:rgba(0,0,0,.6); --sheet-tint:rgba(24,25,38,.58);
+  --ring-hi:rgba(255,255,255,.72); --ring-lo:rgba(255,255,255,.05); --ring-mid:rgba(255,255,255,.26);
+  --glow:rgb(10 132 255/.38); --inset:rgba(255,255,255,.14);
+  --nav-drop:rgba(0,0,0,.55); --seg-on:rgba(255,255,255,.2);
+  --n-tint:rgba(20,22,36,.34); --n-fg:rgba(255,255,255,.62);
+  /* Yagona tint: asosiy CTA. Yarim shaffof — to'liq opaque emas */
+  --cta:linear-gradient(180deg,rgba(90,175,255,.94),rgba(10,132,255,.84)); --cta-text:#fff; --cta-fx:0 12px 34px -6px rgb(10 132 255/.7);
+  --hero:radial-gradient(95% 120% at 8% 0%,rgba(10,132,255,.88),transparent 62%),radial-gradient(80% 100% at 100% 15%,rgba(191,90,242,.68),transparent 64%),radial-gradient(90% 80% at 45% 125%,rgba(48,209,88,.38),transparent 60%),#0A0A22;
+  --scrim:rgba(0,0,0,.4); --scrim-lb:rgba(0,0,0,.9);
+  --o1:10 132 255; --o2:191 90 242; --o3:48 209 88; --o4:255 159 10; --o-a:.5;
+}
+[data-theme="light"]{
+  --bg:#EEF1F8; --bg-2:#F6F8FD; --bg-3:#fff;
+  --text:#0B0B14; --hint:rgba(40,44,70,.64); --faint:rgba(40,44,70,.36);
+  --primary:#007AFF; --link:#0A6FE8; --good:#1FA84A; --warn:#C98A00; --bad:#E5352B;
+  --card:#FFFFFF; --card-2:#EFF2F9; --card-solid:#FFFFFF; --field:rgba(20,30,70,.055);
+  --line:rgba(20,30,70,.08); --line-strong:rgba(20,30,70,.16);
+  --card-shadow:0 1px 2px rgba(30,50,110,.06),0 14px 30px -18px rgba(60,80,140,.38); --shadow:0 18px 44px -18px rgba(60,80,140,.4);
+  --g-tint:rgba(255,255,255,.46); --g-glow:rgba(255,255,255,.75); --g-edge:rgba(255,255,255,.75);
+  --g-deep:rgba(90,110,170,.14); --g-drop:rgba(60,80,140,.3); --sheet-tint:rgba(246,248,253,.6);
+  --ring-hi:rgba(255,255,255,1); --ring-lo:rgba(120,140,190,.2); --ring-mid:rgba(255,255,255,.6);
+  --glow:rgb(0 122 255/.28); --inset:rgba(255,255,255,.95);
+  --nav-drop:rgba(60,80,140,.32); --seg-on:rgba(255,255,255,.95);
+  --n-tint:rgba(255,255,255,.5); --n-fg:rgba(30,34,60,.62);
+  --cta:linear-gradient(180deg,rgba(90,175,255,.95),rgba(0,122,255,.88)); --cta-fx:0 12px 30px -6px rgb(0 122 255/.5);
+  --hero:radial-gradient(95% 120% at 8% 0%,rgba(10,132,255,.55),transparent 62%),radial-gradient(80% 100% at 100% 15%,rgba(191,90,242,.4),transparent 64%),radial-gradient(90% 80% at 45% 125%,rgba(48,209,88,.28),transparent 60%),#EAF1FF;
+  --scrim:rgba(20,30,60,.25); --scrim-lb:rgba(10,14,30,.8); --o-a:.42;
+}
+body{font-family:var(--font-body);letter-spacing:-.011em;-webkit-font-smoothing:antialiased}
+h1,h2,.brand,.coin-bal,.countdown b,.stat b,.pname,.hc-month,.wplace,.sheet h3{font-family:var(--font-display)}
+h1,.hero h1{font-size:34px;font-weight:700;letter-spacing:-.04em}
+h2{font-size:28px;font-weight:700;letter-spacing:-.034em}
+.sec{font-size:20px;font-weight:700}
+
+/* ================= CONTENT QATLAMI (glass yo'q) ================= */
+/* Fon rangi: shisha sindirib ko'rsatadigan yorug'lik (JS .lg-bg qo'shadi). Rang faqat shu yerda, content qatlamida */
+html.lg-on body::before,html.lg-on body::after{display:none}
+.lg-bg{position:fixed;inset:0;z-index:-1;pointer-events:none;overflow:hidden;background:var(--bg)}
+.lg-bg i{position:absolute;width:78vmax;height:78vmax;border-radius:50%;
+  transform:translate3d(calc(var(--px)*34px),calc(var(--py)*34px),0)}
+.lg-bg .o1{left:-34vmax;top:-30vmax;--k:-.16px;background:radial-gradient(circle,rgb(var(--o1)/var(--o-a)),transparent 62%)}
+.lg-bg .o2{right:-40vmax;top:6vmax;--k:-.3px;background:radial-gradient(circle,rgb(var(--o2)/calc(var(--o-a)*.85)),transparent 62%)}
+.lg-bg .o3{left:-30vmax;top:78vmax;--k:-.5px;background:radial-gradient(circle,rgb(var(--o3)/calc(var(--o-a)*.5)),transparent 62%)}
+.lg-bg .o4{right:-36vmax;top:128vmax;--k:-.7px;background:radial-gradient(circle,rgb(var(--o4)/calc(var(--o-a)*.6)),transparent 62%)}
+
+/* Plitalar: zich fill + hairline + yumshoq soya. Blur, rim va yorug'lik dog'i yo'q */
+.card,.tile,.hcard,.wblock,.pod,.state:not(.full){
+  border:0;border-radius:var(--r-lg);-webkit-backdrop-filter:none;backdrop-filter:none;
+  box-shadow:inset 0 0 0 .5px var(--line),var(--card-shadow)}
+.card.stat,.grid2 .card{border-radius:24px}
+.pod{border-radius:24px 24px 14px 14px}.hcard{border-radius:28px}.wblock{border-radius:20px}.tile{border-radius:22px}
+.hero{border:0;box-shadow:inset 0 0 0 .5px var(--g-edge),var(--shadow)}
+.hero .hrow .muted{text-transform:none;letter-spacing:0;font-size:13px;font-weight:600}
+.row.mine{background:linear-gradient(90deg,rgb(10 132 255/.22),transparent);border-radius:18px;box-shadow:inset 0 0 0 .5px rgb(10 132 255/.4)}
+.row+.row,.prow+.prow,.feed .frow+.frow{border-top:.5px solid var(--line)}
+.stats .stat+.stat{border-left:.5px solid var(--line)}
+.pod.p1{box-shadow:inset 0 0 0 .5px rgb(255 214 10/.55),0 0 40px -10px rgb(255 214 10/.35),var(--card-shadow)}
+.pod.mine{box-shadow:inset 0 0 0 1.5px var(--link),0 0 24px var(--glow)}
+.prize.top1::after{border-radius:calc(var(--r-lg) - 1px)}
+
+/* Progress, maydonlar, tugmalar (content ichidagi boshqaruv = fill) */
+.bar{background:var(--field);height:10px;box-shadow:inset 0 1px 3px rgba(0,0,0,.25),inset 0 0 0 .5px var(--line)}
+.bar i{background:linear-gradient(90deg,#64D2FF,#0A84FF 60%,#5E5CE6);box-shadow:0 0 14px rgb(10 132 255/.6)}
+.bet-row input,.field input,.field textarea,.field select,.search input{
+  background:var(--field);border:0;border-radius:18px;color:var(--text);
+  box-shadow:inset 0 1px 3px rgba(0,0,0,.22),inset 0 0 0 .5px var(--line-strong)}
+.bet-row input:focus,.field input:focus,.field textarea:focus,.field select:focus,.search input:focus{outline:0;
+  box-shadow:0 0 0 3.5px rgb(10 132 255/.42),inset 0 0 0 .5px var(--primary)}
+.btn{border-radius:999px;color:#fff;background:var(--primary);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.28),0 6px 16px -8px var(--glow);transition:transform .5s var(--spring),filter .2s}
+.btn.sec{color:var(--text);background:var(--field);box-shadow:inset 0 0 0 .5px var(--line-strong)}
+.btn.ok{color:#03140C}
+.btn.danger{box-shadow:inset 0 0 0 .5px rgb(255 69 58/.5)}
+.btn.sm,.btn.danger,.back{border-radius:999px}
+.btn:active:not(:disabled){transform:scale(.94)}
+.link{font-weight:600}
+.theme-btn,.csheet-x{border:0;border-radius:999px;background:var(--field);color:var(--text);box-shadow:inset 0 0 0 .5px var(--line-strong)}
+.theme-btn:active{transform:scale(.9)}
+.avatar{box-shadow:0 8px 20px -8px var(--glow)}
+.thumb,.proof-img{border-radius:inherit;box-shadow:inset 0 0 0 .5px var(--line)}
+.lightbox{background:var(--scrim-lb);-webkit-backdrop-filter:none;backdrop-filter:none}
+.lightbox img{border-radius:22px;box-shadow:0 30px 80px rgba(0,0,0,.5),0 0 0 .5px rgba(255,255,255,.3)}
+
+/* ================= CONTROLS QATLAMI (Regular glass) ================= */
+/* Yagona recept: material + yuqori burchakdan yorug'lik + chekka halqa + soya */
+.chip,.toast,.me-card,.seg{
+  background:linear-gradient(var(--ang),var(--g-glow),transparent 46%),var(--g-tint);
+  -webkit-backdrop-filter:var(--m-regular);backdrop-filter:var(--m-regular);border:0;
+  box-shadow:inset 0 0 0 .5px var(--g-edge),inset 0 0 14px -6px var(--g-glow),inset 0 -12px 18px -14px var(--g-deep),0 1px 2px rgba(0,0,0,.08),0 14px 30px -14px var(--g-drop);
+  transition:transform .5s var(--spring),opacity .3s}
+/* Specular rim: konik gradient, burchagi --ang (scroll + giroskop) */
+.chip::before,.toast::before,.me-card::before,.nav::after,.nav-ind::after{
+  content:"";position:absolute;inset:0;border-radius:inherit;padding:1px;pointer-events:none;z-index:3;
+  background:conic-gradient(from var(--ang),var(--ring-hi),var(--ring-lo) 18%,var(--ring-mid) 46%,var(--ring-lo) 70%,var(--ring-hi));
+  -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;
+  mask:linear-gradient(#000 0 0) content-box exclude,linear-gradient(#000 0 0);mask-composite:exclude;opacity:.85}
+.nav::after,.nav-ind::after{padding:1.3px;z-index:4;opacity:.9}
+
+/* Yuqori chip'lar */
+.chip{position:relative;padding:7px 13px;font-weight:600;color:var(--text)}
+.chip:active{transform:scale(.94)}
+
+/* Yuqori panel: fon yo'q, scroll-reaktiv ixchamlashadi; ostidagi kontent scroll edge effect bilan eriydi */
+.top{background:none;border:0;-webkit-backdrop-filter:none;backdrop-filter:none;min-height:var(--top-h);isolation:isolate}
+.top::before{display:none}
+.brand{font-size:24px;font-weight:700;letter-spacing:-.035em;transform-origin:left center;transform:scale(calc(1 - var(--sp)*.2))}
+.logo{border-radius:9px;box-shadow:inset 0 0 0 .5px var(--g-edge),0 6px 16px -4px var(--glow)}
+.top-r{transform:translateY(calc(var(--sp)*-1px))}
+.lg-pb{position:fixed;left:0;right:0;pointer-events:none;z-index:4}
+.lg-pb i{position:absolute;inset:0}
+.lg-pb.t{top:0;height:calc(env(safe-area-inset-top,0px) + 92px);opacity:var(--sp);background:linear-gradient(color-mix(in srgb,var(--bg) 72%,transparent),transparent)}
+.lg-pb.b{bottom:0;height:calc(var(--nav-h) + var(--nav-gap) + 70px + env(safe-area-inset-bottom,0px));opacity:.95;background:linear-gradient(transparent,color-mix(in srgb,var(--bg) 62%,transparent))}
+.lg-pb i:nth-child(1){-webkit-backdrop-filter:blur(2px);backdrop-filter:blur(2px);-webkit-mask:linear-gradient(#000 20%,transparent 90%);mask:linear-gradient(#000 20%,transparent 90%)}
+.lg-pb i:nth-child(2){-webkit-backdrop-filter:blur(7px);backdrop-filter:blur(7px);-webkit-mask:linear-gradient(#000 0%,transparent 45%);mask:linear-gradient(#000 0%,transparent 45%)}
+.lg-pb.b i:nth-child(1){-webkit-mask:linear-gradient(transparent 10%,#000 80%);mask:linear-gradient(transparent 10%,#000 80%)}
+.lg-pb.b i:nth-child(2){-webkit-mask:linear-gradient(transparent 55%,#000 100%);mask:linear-gradient(transparent 55%,#000 100%)}
+
+/* Tab bar: suzuvchi shisha kapsula (kichik element: fonga qarab light/dark almashadi) */
+.nav{left:18px;right:18px;max-width:420px;border-radius:999px;padding:5px;transition:height .6s var(--spring),transform .6s var(--spring),--n-tint .45s,--n-fg .45s;animation:navIn .8s var(--spring) backwards}
+@keyframes navIn{from{opacity:0;transform:translateY(34px) scale(.88)}to{opacity:1;transform:none}}
+.nav[data-ctx="dark"]{--n-tint:rgba(18,20,34,.38);--n-fg:rgba(255,255,255,.66)}
+.nav[data-ctx="light"]{--n-tint:rgba(255,255,255,.52);--n-fg:rgba(26,30,56,.64)}
+.nav::before{inset:0;border:0;border-radius:inherit;
+  background:linear-gradient(var(--ang),var(--g-glow),transparent 44%),linear-gradient(var(--n-tint),var(--n-tint));
+  -webkit-backdrop-filter:blur(20px) saturate(200%) brightness(1.06);backdrop-filter:blur(20px) saturate(200%) brightness(1.06);
+  box-shadow:inset 0 0 0 .5px var(--g-edge),inset 0 0 22px -6px rgba(255,255,255,.2),inset 0 -16px 22px -16px var(--g-deep),0 2px 6px rgba(0,0,0,.14),0 28px 50px -16px var(--nav-drop)}
+.nav.mini{height:50px;transform:translateY(4px) scale(.94)}
+/* Indikator: tinch holatda FILL (glass ustida glass yo'q); sudralganda glass'ga "ko'tariladi" */
+.nav-ind{top:5px;bottom:5px;border-radius:999px;border:0;cursor:grab;
+  background:radial-gradient(70% 90% at 50% 0%,rgba(255,255,255,.26),transparent 70%),rgba(255,255,255,.12);
+  -webkit-backdrop-filter:none;backdrop-filter:none;
+  box-shadow:inset 0 0 0 .5px var(--g-edge),inset 0 1px 0 rgba(255,255,255,.3),0 6px 16px -8px var(--glow);
+  transition:transform .6s var(--spring),width .4s var(--ease),scale .16s linear,box-shadow .3s,background .3s;will-change:transform,scale}
+[data-theme="light"] .nav-ind{background:radial-gradient(70% 90% at 50% 0%,#fff,transparent 70%),rgba(255,255,255,.55);box-shadow:inset 0 0 0 .5px var(--g-edge),0 6px 16px -8px rgba(60,80,140,.4)}
+.nav-ind::before{content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;padding:5px;opacity:0;transition:opacity .25s;
+  -webkit-backdrop-filter:saturate(300%) brightness(1.3);backdrop-filter:saturate(300%) brightness(1.3);
+  -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask:linear-gradient(#000 0 0) content-box exclude,linear-gradient(#000 0 0);mask-composite:exclude}
+.nav-ind.dragging{scale:1.16 1.2;transition:transform 0s,scale .4s var(--spring);
+  background:radial-gradient(70% 90% at 50% 0%,rgba(255,255,255,.34),transparent 70%),rgba(255,255,255,.14);
+  -webkit-backdrop-filter:blur(1.5px) saturate(240%) brightness(1.24) contrast(1.06);backdrop-filter:blur(1.5px) saturate(240%) brightness(1.24) contrast(1.06);
+  box-shadow:inset 0 0 22px -2px rgba(255,255,255,.4),0 16px 36px -4px var(--glow)}
+.nav-ind.dragging::before{opacity:.8}
+[data-theme="light"] .nav-ind.dragging{background:radial-gradient(70% 90% at 50% 0%,#fff,transparent 70%),rgba(255,255,255,.4)}
+.nav:has(.tab:active) .nav-ind:not(.dragging){scale:1.1 1.08}
+.tab{z-index:3;font-size:10px;font-weight:600;border-radius:999px;color:var(--n-fg);transition:color .25s,transform .55s var(--spring)}
+.tab>span{max-height:14px;overflow:hidden;opacity:.92;transition:opacity .25s,max-height .4s var(--ease),transform .4s var(--ease)}
+.nav.mini .tab>span{max-height:0;opacity:0;transform:translateY(-6px)}.nav.mini .tab{gap:0}
+.tab i svg{stroke-width:1.9}
+.tab.active,.tab.active i{color:var(--primary)}
+.tab.active i{transform:scale(1.1);filter:drop-shadow(0 0 8px var(--glow))}
+.tab:active{transform:scale(.88)}
+.tab.drag-target:not(.active){color:var(--text)}
+
+/* "Mening o'rnim" paneli: kontent ustida suzuvchi, katta element — light/dark almashmaydi */
+.me-card{border-radius:26px;padding:8px 18px}
+
+/* Admin seg: yopishqoq boshqaruv = glass; faol bo'lim = fill */
+.seg{border-radius:999px;padding:4px}.seg button{border-radius:999px}
+.seg button.active{background:var(--seg-on);color:var(--text);box-shadow:inset 0 0 0 .5px var(--g-edge)}
+
+/* Segment (Joriy / Tarix): konteyner = fill, thumb = fill; tegilganda glass'ga ko'tariladi */
+.ctabs{background:var(--field);border-radius:999px;padding:4px;border:0;-webkit-backdrop-filter:none;backdrop-filter:none;
+  box-shadow:inset 0 1.5px 4px rgba(0,0,0,.22),inset 0 0 0 .5px var(--line)}
+.ctab-ind{border-radius:999px;border:0;background:radial-gradient(70% 90% at 50% 0%,rgba(255,255,255,.28),transparent 70%),rgba(255,255,255,.16);
+  box-shadow:inset 0 0 0 .5px var(--g-edge),inset 0 1px 0 rgba(255,255,255,.3),0 6px 14px -6px var(--g-drop);
+  transition:transform .6s var(--spring),scale .16s linear,box-shadow .3s}
+[data-theme="light"] .ctab-ind{background:#fff}
+.ctabs:has(.ctab:active) .ctab-ind{-webkit-backdrop-filter:blur(2px) saturate(220%) brightness(1.2);backdrop-filter:blur(2px) saturate(220%) brightness(1.2)}
+.ctab,.ctab.active{color:var(--text);font-weight:600}
+
+/* Sheet: katta Regular glass; ochilganda qalinlashadi. Ichidagi plitalar glass emas, fill */
+.sheet-bg{background:var(--scrim);-webkit-backdrop-filter:none;backdrop-filter:none;animation:fadeBg .4s var(--ease)}
+.sheet{background:linear-gradient(var(--ang),var(--g-glow),transparent 30%),var(--sheet-tint);border:0;border-radius:38px 38px 0 0;
+  -webkit-backdrop-filter:var(--m-sheet);backdrop-filter:var(--m-sheet);
+  box-shadow:inset 0 0 0 .5px var(--g-edge),inset 0 1.4px 0 var(--ring-hi),0 -26px 64px -12px var(--g-drop);animation:sheetUp .65s var(--spring)}
+@keyframes sheetUp{from{transform:translateY(100%)}to{transform:none}}
+.sheet::before{width:36px;height:5px;background:var(--faint)}
+.sheet .card,.sheet .wblock{background:var(--card-2);box-shadow:inset 0 0 0 .5px var(--line)}
+
+/* Toast */
+.toast{color:var(--text);border-radius:999px;transition:opacity .3s,transform .6s var(--spring)}
+.toast.err{background:linear-gradient(var(--ang),var(--g-glow),transparent 55%),rgb(255 69 58/.42)}
+
+/* Asosiy amal (reklama ko'rish): YAGONA tint'langan glass, yarim shaffof */
+.cta{height:58px;border-radius:999px;color:var(--cta-text);font-weight:700;letter-spacing:-.01em;
+  background:radial-gradient(120px circle at var(--mx,50%) var(--my,0%),rgba(255,255,255,calc(.16 + var(--lit)*.35)),transparent 70%),linear-gradient(180deg,rgba(255,255,255,.34),transparent 52%),var(--cta);
+  -webkit-backdrop-filter:var(--m-regular);backdrop-filter:var(--m-regular);
+  box-shadow:inset 1.2px 1.2px 0 rgba(255,255,255,.7),inset -1px -1px 0 rgba(255,255,255,.22),inset 0 -16px 22px -12px rgba(0,40,120,.5),var(--cta-fx);
+  transition:transform .6s var(--spring),filter .2s,opacity .2s,--lit .4s}
+.cta:active:not(:disabled){transform:scale(.95)}
+.cta.ok{background:linear-gradient(180deg,rgba(255,255,255,.34),transparent 52%),linear-gradient(180deg,rgba(90,225,130,.94),rgba(48,209,88,.84))}
+.cta.busy #watchLabel::after{border:2px solid rgba(255,255,255,.35);border-top-color:#fff}
+.cta-wrap::before{filter:blur(24px);border-radius:999px}
+
+/* ---------- Sahifa o'tishlari (blur'siz: ichidagi glass backdrop'i buzilmasin) ---------- */
+.view{animation:lgIn .6s var(--soft)}
+@keyframes lgIn{from{opacity:0;transform:translate3d(24px,0,0) scale(.985)}to{opacity:1;transform:none}}
+@keyframes rise{from{opacity:0;transform:translateY(16px) scale(.97)}to{opacity:1;transform:none}}
+.ccard:active,.hcard:active{transform:scale(.97)}
+
+/* ---------- Refraction (Chromium/Android WebView; JS yoqadi): faqat sudralayotgan indikator ---------- */
+.lg-refract .nav-ind.dragging{-webkit-backdrop-filter:url(#lg-ind) saturate(240%) brightness(1.2);backdrop-filter:url(#lg-ind) saturate(240%) brightness(1.2)}
+
+/* ---------- Scroll paytida: cheksiz dekor animatsiyalar to'xtaydi (JS .scrolling qo'yadi) ---------- */
+html.scrolling .atmo *,html.scrolling .crown::after,html.scrolling .cta::after,html.scrolling .cta-wrap::before,html.scrolling #homeBarFill::after,html.scrolling .sk::after,html.scrolling .avatar::before,html.scrolling .prize.top1::before,html.scrolling .live i{animation-play-state:paused}
+.view.stag>*,.view{will-change:auto}
+
+/* ---------- Moslashuvchanlik va accessibility ---------- */
+.lite{--m-regular:blur(8px) saturate(150%);--m-sheet:blur(14px) saturate(150%)}
+.lite .lg-pb i,.lite .nav-ind::before{display:none}
+.lite .nav::before{-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px)}
+
+/* Reduced Transparency: glass "xiraroq" (frosted) — orqa kontent ko'proq yashiriladi, blur qoladi */
+@media (prefers-reduced-transparency:reduce){
+  :root{--m-regular:blur(34px) saturate(115%);--m-sheet:blur(40px) saturate(115%)}
+  :root,[data-theme="dark"]{--g-tint:rgba(24,26,38,.93);--sheet-tint:rgba(18,19,30,.96)}
+  [data-theme="light"]{--g-tint:rgba(250,251,255,.94);--sheet-tint:rgba(247,249,254,.97)}
+  .nav,.nav[data-ctx="dark"],.nav[data-ctx="light"]{--n-tint:var(--g-tint)}
+  .nav::before{-webkit-backdrop-filter:blur(34px) saturate(115%);backdrop-filter:blur(34px) saturate(115%)}
+  .lg-pb i{display:none}
+  .cta{-webkit-backdrop-filter:none;backdrop-filter:none}
+}
+/* Increased Contrast: aniq chegara, zichroq fon, kuchliroq matn */
+@media (prefers-contrast:more){
+  :root,[data-theme="dark"]{--g-tint:rgba(20,22,34,.9);--sheet-tint:rgba(16,17,28,.94);--hint:rgba(235,235,245,.88);--g-edge:rgba(255,255,255,.55)}
+  [data-theme="light"]{--g-tint:rgba(255,255,255,.92);--sheet-tint:rgba(250,251,255,.95);--hint:rgba(20,24,50,.84);--g-edge:rgba(20,30,70,.5)}
+  .nav,.nav[data-ctx="dark"],.nav[data-ctx="light"]{--n-tint:var(--g-tint);--n-fg:var(--text)}
+  .card,.tile,.hcard,.wblock,.pod,.state:not(.full){box-shadow:inset 0 0 0 1px var(--line-strong)}
+  .chip,.toast,.me-card,.seg,.sheet{box-shadow:inset 0 0 0 1.5px var(--g-edge)}
+  .nav::before{box-shadow:inset 0 0 0 1.5px var(--g-edge)}
+  .tab.active,.tab.active i{color:var(--text)}
+}
+/* Reduced Motion: elastik harakat va morph o'chadi, effektlar sokinlashadi */
+@media (prefers-reduced-motion:reduce){
+  .view,.nav,.sheet,.cta-wrap::before{animation:none}
+  .nav-ind,.ctab-ind,.tab,.nav,.btn,.cta,.chip{transition-duration:.01s}
+  .nav-ind.dragging{scale:1.04}
+}
+/* backdrop-filter yo'q brauzer: zich fon */
+@supports not ((-webkit-backdrop-filter:blur(1px)) or (backdrop-filter:blur(1px))){
+  :root,[data-theme="dark"]{--g-tint:rgba(24,26,38,.94);--sheet-tint:rgba(18,19,30,.97)}
+  [data-theme="light"]{--g-tint:rgba(250,251,255,.95);--sheet-tint:rgba(247,249,254,.98)}
+  .nav,.nav[data-ctx="dark"],.nav[data-ctx="light"]{--n-tint:var(--g-tint)}
+}
+@media (max-width:380px){.nav{left:10px;right:10px}}
+html,body{overflow-x:clip;scrollbar-width:none;-ms-overflow-style:none}
+html::-webkit-scrollbar,body::-webkit-scrollbar,*::-webkit-scrollbar{display:none;width:0;height:0}
+.nav,.tab,.nav-ind{touch-action:none;-webkit-user-select:none;user-select:none}

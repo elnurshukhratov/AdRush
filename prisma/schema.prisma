@@ -1,0 +1,317 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum CompetitionStatus {
+  DRAFT     // admin tayyorlayapti, reward qabul qilinmaydi
+  ACTIVE    // reward qabul qilinadi (bir vaqtda faqat bitta ACTIVE — DB darajasida kafolatlangan)
+  ENDED     // tugagan: reward qabul qilinmaydi, g'oliblar aniqlangan
+  ARCHIVED  // arxivlangan (ma'lumotlar saqlanadi)
+}
+
+enum WinnerStatus {
+  PENDING    // g'olib aniqlandi
+  CONTACTED  // g'olib bilan bog'lanildi
+  DELIVERED  // sovrin topshirildi
+  CANCELLED  // bekor qilindi (diskvalifikatsiya va h.k.)
+}
+
+enum PrizeStatus {
+  ACTIVE    // foydalanuvchilarga ko'rinadi va g'olibga biriktiriladi
+  INACTIVE  // yashirin
+}
+
+// Reklama ko'rish sessiyasi holati (server tomonida boshqariladi)
+enum AdSessionStatus {
+  PENDING   // server sessiya ochdi, reklama ko'rilmoqda
+  CLAIMED   // klient "ko'rdim" dedi, AdsGram server tasdig'i (Reward URL) kutilmoqda
+  REWARDED  // hisoblandi (+1 valid reklama)
+  EXPIRED   // muddati o'tdi / yangi sessiya bilan almashtirildi
+  REJECTED  // shubhali (masalan juda tez claim) — hisoblanmaydi
+}
+
+// Rush Coin harakati turi (ledger). Nomlar: ADS_REWARD (+), REFERRAL_REWARD (+), COMPETITION_BET (-), LOSS_REFUND (+), COMPETITION_WIN (+, coin bilan to'lanadigan yutuq uchun), TRANSFER_OUT (-) / TRANSFER_IN (+) — foydalanuvchilar orasida o'tkazma (ikkala yozuv refType='TRANSFER' va bir xil refId bilan bog'langan)
+enum CoinTxType {
+  ADS_REWARD
+  REFERRAL_REWARD
+  COMPETITION_BET
+  LOSS_REFUND
+  COMPETITION_WIN
+  SUBSCRIBE_REWARD
+  TRANSFER_OUT
+  TRANSFER_IN
+}
+
+// Tikish holati: ACTIVE (competition davom etmoqda) -> WON (sovrin oldi) | LOST (yutqazdi, 30% qaytarildi)
+enum BetStatus {
+  ACTIVE
+  WON
+  LOST
+}
+
+enum AdminRole {
+  SUPER_ADMIN
+  ADMIN
+}
+
+model User {
+  id         Int       @id @default(autoincrement())
+  telegramId BigInt    @unique
+  username   String?
+  firstName  String?
+  isBlocked  Boolean   @default(false)
+  // Foydalanuvchi tili: 'uz' | 'en' | 'ru'. NULL — hali tanlamagan (botda birinchi /start da so'raladi)
+  language   String?
+  // Rush Coin balansi — faqat server o'zgartiradi (CoinTransaction ledger bilan birga, bitta tranzaksiyada)
+  rushCoins  Int       @default(0)
+  // Kim taklif qilgani (referral). Faqat bir marta, yangi user /start qilganda yoziladi.
+  referredByUserId Int?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  rewards  AdReward[]
+  stats    MonthlyStat[]
+  wins     Winner[]
+  sessions AdSession[]
+  coinTxs  CoinTransaction[]
+  bets     CompetitionBet[]
+
+  referredBy User?  @relation("Referral", fields: [referredByUserId], references: [id], onDelete: SetNull)
+  referrals  User[] @relation("Referral")
+
+  @@index([isBlocked])
+  @@index([referredByUserId])
+}
+
+// Admin yaratadigan competition (nomi tarixiy: avval oylik edi). year/month — startAt (UTC) dan hosil qilinadi,
+// eski kod/ma'lumotlar bilan moslik uchun saqlangan; endi unique emas.
+// DB da qo'shimcha: partial unique index "MonthlyCompetition_single_active" — bir vaqtda faqat bitta ACTIVE.
+model MonthlyCompetition {
+  id          Int               @id @default(autoincrement())
+  title       String
+  description String?
+  year        Int
+  month       Int // 1..12
+  startAt     DateTime
+  endAt       DateTime // exclusive
+  status      CompetitionStatus @default(DRAFT)
+  lockedAt    DateTime? // ENDED bo'lgan vaqt
+  archivedAt  DateTime?
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @default(now()) @updatedAt
+
+  rewards  AdReward[]
+  stats    MonthlyStat[]
+  winners  Winner[]
+  sessions AdSession[]
+  prizes   Prize[]
+  bets     CompetitionBet[]
+
+  @@index([status])
+  @@index([status, endAt])
+  @@index([startAt])
+}
+
+model AdReward {
+  id               BigInt   @id @default(autoincrement())
+  userId           Int
+  // Reklama endi Rush Coin beradi va competitionga bog'liq emas; shuning uchun ixtiyoriy (eski yozuvlarda to'liq)
+  competitionId    Int?
+  // Unikal reward kaliti (duplicate/replay himoyasi). AdsGram rasmiy hujjatida reward/event ID
+  // BERILMAYDI, shuning uchun bu yerda BIZ yaratgan AdSession.id saqlanadi.
+  externalRewardId String   @unique
+  createdAt        DateTime @default(now())
+  metadata         Json?
+
+  user        User                @relation(fields: [userId], references: [id], onDelete: Restrict)
+  competition MonthlyCompetition? @relation(fields: [competitionId], references: [id], onDelete: Restrict)
+
+  @@index([userId, competitionId])
+  @@index([competitionId, createdAt])
+  // cooldown (oxirgi reward) va kunlik limit (userId + createdAt oralig'i) so'rovlari uchun
+  @@index([userId, createdAt(sort: Desc)])
+}
+
+model MonthlyStat {
+  id            Int      @id @default(autoincrement())
+  userId        Int
+  competitionId Int
+  // Nomi tarixiy: endi bu competition BALLI = shu competitionga tikilgan Rush Coin yig'indisi (reyting shu bo'yicha)
+  validAds      Int      @default(0)
+  // Oy yopilganda final rank shu yerga yoziladi (jonli rank DB so'rovi bilan hisoblanadi)
+  rank          Int?
+  updatedAt     DateTime @updatedAt
+
+  user        User               @relation(fields: [userId], references: [id], onDelete: Restrict)
+  competition MonthlyCompetition @relation(fields: [competitionId], references: [id], onDelete: Restrict)
+
+  @@unique([userId, competitionId])
+  // Leaderboard: validAds kamayish, tenglikda avval yetganga ustunlik
+  @@index([competitionId, validAds(sort: Desc), updatedAt(sort: Asc)])
+}
+
+model Winner {
+  id            Int          @id @default(autoincrement())
+  competitionId Int
+  userId        Int
+  place         Int // prize.place bilan bir xil
+  prizeId       Int?
+  prize         String // aniqlangan paytdagi sovrin nomi (snapshot — sovrin keyin o'zgarsa/o'chsa ham saqlanadi)
+  status        WinnerStatus @default(PENDING)
+  note          String? // admin izohi (bog'lanish tafsilotlari va h.k.)
+  // Sovrin topshirilganini tasdiqlovchi rasm (faqat admin yuklaydi): /uploads/proofs/<uuid>.<jpg|png|webp>
+  proofImage      String?
+  proofUploadedAt DateTime?
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @default(now()) @updatedAt
+
+  competition MonthlyCompetition @relation(fields: [competitionId], references: [id], onDelete: Restrict)
+  user        User               @relation(fields: [userId], references: [id], onDelete: Restrict)
+  prizeRef    Prize?             @relation(fields: [prizeId], references: [id], onDelete: SetNull)
+
+  @@unique([competitionId, place])
+  @@unique([competitionId, userId])
+  @@index([status])
+  @@index([userId])
+}
+
+// Server ochgan reklama sessiyasi: har bir reward faqat bitta sessiyaga bog'lanadi
+model AdSession {
+  id            String          @id @default(uuid()) @db.Uuid
+  userId        Int
+  competitionId Int? // ixtiyoriy: Rush Coin uchun faol competition shart emas
+  status        AdSessionStatus @default(PENDING)
+  createdAt     DateTime        @default(now())
+  expiresAt     DateTime
+  claimedAt     DateTime?
+  rewardedAt    DateTime?
+  rejectReason  String?
+
+  user         User                 @relation(fields: [userId], references: [id], onDelete: Restrict)
+  competition  MonthlyCompetition?  @relation(fields: [competitionId], references: [id], onDelete: Restrict)
+  confirmation AdsgramConfirmation?
+
+  @@index([userId, status])
+  @@index([status, expiresAt])
+  @@index([competitionId, status])
+}
+
+// AdsGram Reward URL (server-to-server GET) orqali kelgan tasdiqlar.
+// AdsGram hujjatida faqat telegramId yuboriladi (reward ID / imzo yo'q), shuning uchun
+// har bir tasdiq bitta sessiyaga ko'pi bilan bir marta bog'lanadi.
+model AdsgramConfirmation {
+  id         BigInt   @id @default(autoincrement())
+  telegramId BigInt
+  receivedAt DateTime @default(now())
+  sessionId  String?  @unique @db.Uuid
+
+  session AdSession? @relation(fields: [sessionId], references: [id], onDelete: Restrict)
+
+  @@index([telegramId, receivedAt])
+}
+
+// Sovrinlar kodda hardcode qilinmaydi: admin Mine App ichidan har bir competition uchun yaratadi.
+// place = reytingdagi o'rin (1 = birinchi). Competition tugaganda place bo'yicha g'olibga biriktiriladi.
+model Prize {
+  id            Int         @id @default(autoincrement())
+  competitionId Int
+  place         Int
+  title         String
+  description   String?
+  imageUrl      String? // faqat bizning /uploads/prizes/... yo'li
+  value         String? // erkin matn: "500$", "≈ 450 000 so'm"
+  quantity      Int         @default(1)
+  status        PrizeStatus @default(ACTIVE)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  competition MonthlyCompetition @relation(fields: [competitionId], references: [id], onDelete: Restrict)
+  winners     Winner[]
+
+  @@unique([competitionId, place])
+  @@index([competitionId, status])
+}
+
+// Rush Coin ledger: har bir balans o'zgarishi shu yerda (amount: + kirim, - chiqim). Faqat qo'shiladi.
+// idempotencyKey UNIQUE: bir hodisa (reklama sessiyasi, referral, tikish, refund) ikki marta yozilmaydi.
+//   ADS_REWARD:<sessionId> | REFERRAL_REWARD:<yangiUserId> | COMPETITION_BET:<betId|requestId> | LOSS_REFUND:<betId>
+model CoinTransaction {
+  id             BigInt     @id @default(autoincrement())
+  userId         Int
+  amount         Int
+  type           CoinTxType
+  idempotencyKey String     @unique
+  refType        String?
+  refId          String?
+  competitionId  Int?
+  createdAt      DateTime   @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([userId, type])
+}
+
+// Foydalanuvchining competitionga tikishi (bir vaqtda ko'pi bilan MAX_ACTIVE_BETS ta ACTIVE)
+model CompetitionBet {
+  id            BigInt    @id @default(autoincrement())
+  userId        Int
+  competitionId Int
+  amount        Int
+  status        BetStatus @default(ACTIVE)
+  refundAmount  Int       @default(0) // LOST bo'lganda qaytarilgan miqdor (amount * LOSS_REFUND_PERCENT / 100)
+  createdAt     DateTime  @default(now())
+  resolvedAt    DateTime?
+
+  user        User               @relation(fields: [userId], references: [id], onDelete: Restrict)
+  competition MonthlyCompetition @relation(fields: [competitionId], references: [id], onDelete: Restrict)
+
+  @@index([userId, status])
+  @@index([competitionId, status])
+  @@index([competitionId, userId])
+}
+
+model Admin {
+  id         Int       @id @default(autoincrement())
+  telegramId BigInt    @unique
+  username   String?
+  role       AdminRole @default(ADMIN)
+  createdAt  DateTime  @default(now())
+}
+
+// Audit + shubhali activity jurnali (faqat qo'shiladi, o'chirilmaydi).
+// action: ADMIN_*, COMPETITION_CLOSED, WINNER_STATUS_CHANGED, USER_BLOCKED, SUSPICIOUS:<TYPE> ...
+model AuditLog {
+  id              BigInt   @id @default(autoincrement())
+  actorTelegramId BigInt?
+  action          String
+  entityType      String?
+  entityId        String?
+  details         Json?
+  createdAt       DateTime @default(now())
+
+  @@index([action, createdAt])
+  @@index([actorTelegramId, createdAt])
+  @@index([entityType, entityId])
+  @@index([createdAt(sort: Desc)])
+}
+
+// Majburiy obuna kanali (admin paneldan qo'shiladi). Bir vaqtda faqat bitta isActive=true.
+// chatId — Telegram chat id (-100...), getChatMember shu bilan chaqiriladi.
+model RequiredChannel {
+  id        Int      @id @default(autoincrement())
+  chatId    BigInt
+  username  String?
+  title     String
+  inviteUrl String
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([isActive])
+}

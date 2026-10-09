@@ -1,0 +1,61 @@
+# KOLIZEY MINE — app + PostgreSQL + Redis
+#   1) cp .env.example .env   (BOT_TOKEN, ADMIN_IDS, ADSGRAM_*, POSTGRES_PASSWORD ... ni to'ldiring)
+#   2) docker compose up -d --build
+#
+# .env dagi DATABASE_URL / REDIS_URL / PORT bu yerdagi `environment` bilan ustidan yoziladi.
+# Telegram Mini App va AdsGram Reward URL uchun app oldida HTTPS reverse proxy (nginx/Caddy/Cloudflare) bo'lishi shart.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-kolizey}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD ni .env da belgilang}
+      POSTGRES_DB: ${POSTGRES_DB:-kolizey_mine}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    # Port tashqariga ochilmaydi: faqat app konteyneri ulanadi
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    # Faqat rate limit hisoblagichlari: diskka yozish kerak emas
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  app:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      # Parolda maxsus belgilar (@ : / ? # %) bo'lsa URL-encode qiling yoki faqat harf/raqam ishlating
+      DATABASE_URL: postgresql://${POSTGRES_USER:-kolizey}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-kolizey_mine}?schema=public
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      # Default: faqat serverning o'zidan (reverse proxy uchun). Ochiq qilish: APP_BIND=0.0.0.0
+      - "${APP_BIND:-127.0.0.1}:${APP_PORT:-3000}:3000"
+    volumes:
+      # Admin yuklagan sovrin rasmlari (konteyner qayta yaratilganda yo'qolmasligi uchun)
+      - uploads:/app/uploads
+    stop_grace_period: 20s
+
+volumes:
+  pgdata:
+  uploads:
