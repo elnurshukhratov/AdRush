@@ -117,7 +117,7 @@
     st.root = h('section', { class: 'view', id: 'view-admin', 'data-view': 'admin', hidden: true });
     st.body = h('div', { id: 'admBody' });
     const seg = h('div', { class: 'seg', id: 'admSeg' },
-      ...[['dash', '📊 Dashboard'], ['products', '🛍 Mahsulotlar'], ['orders', '📦 Buyurtmalar'], ['sec', '🛡️ Xavfsizlik'], ['sub', '📢 Kanal']].map(([key, label]) =>
+      ...[['dash', '📊 Dashboard'], ['products', '🛍 Mahsulotlar'], ['orders', '📦 Buyurtmalar'], ['ads', '📺 Reklama'], ['sec', '🛡️ Xavfsizlik'], ['sub', '📢 Kanal']].map(([key, label]) =>
         h('button', { type: 'button', 'data-tab': key, class: key === st.tab ? 'active' : '', text: label, onclick: () => setTab(key) })));
     st.root.append(h('h2', { text: '⚙️ Admin' }), seg, st.body);
     wrap.appendChild(st.root);
@@ -150,6 +150,7 @@
     const guard = () => my === st.token;
     setBack(null);
     if (st.tab === 'dash') return renderDash(guard);
+    if (st.tab === 'ads') return renderAds(guard);
     if (st.tab === 'sec') return renderSecurity(guard);
     if (st.tab === 'sub') return renderSubscription(guard);
     if (st.tab === 'products') return renderProducts(guard);
@@ -285,11 +286,97 @@
     st.body.replaceChildren(frag);
   }
 
+  // ---------- Reklama provayderlari: AdsGram / Monetag / OnClickA ----------
+  // Bu yerda FAQAT ommaviy identifikatorlar tahrirlanadi. Maxfiy tokenlar (.env) hech qachon ko'rsatilmaydi — faqat "o'rnatilgan / yo'q".
+  const AD_REASON_UZ = {
+    NOT_CONFIGURED: 'sozlanmagan',
+    SAME_BLOCK_ID: 'block ID vazifa blokiga teng',
+    CALLBACK_TOKEN_MISSING: '.env da token yo‘q',
+  };
+  const AD_FIELDS = [
+    { group: 'adsgram', title: 'AdsGram', logo: 'A', stateKey: 'adsgramTask', fields: [
+      ['adsgramTaskBlockId', 'Vazifalar kartasi — block ID', 'masalan 12345'],
+      ['adsgramQuickBlockId', 'Tepadagi +1 olmos — ALOHIDA block ID', 'vazifa blokidan farqli bo‘lsin'],
+    ], tokenKey: 'adsgram', tokenName: 'ADSGRAM_REWARD_TOKEN', tpl: ['adsgramTask', 'adsgramQuick'] },
+    { group: 'monetag', title: 'Monetag', logo: 'M', stateKey: 'monetag', fields: [
+      ['monetagZoneId', 'Asosiy (main SDK) zone ID', 'faqat raqam'],
+      ['monetagSdkUrl', 'SDK skript manzili (https)', 'Monetag kabinetidagi SDK tegidan'],
+    ], tokenKey: 'monetag', tokenName: 'MONETAG_POSTBACK_TOKEN', tpl: ['monetag'] },
+    { group: 'onclicka', title: 'OnClickA', logo: 'O', stateKey: 'onclicka', fields: [
+      ['onclickaSpotId', 'SPOT-ID', 'faqat raqam'],
+      ['onclickaSdkUrl', 'TMA video SDK manzili (https)', 'bo‘sh qoldirsangiz reklama o‘chadi'],
+    ], tokenKey: 'onclicka', tokenName: 'ONCLICKA_CALLBACK_TOKEN', tpl: ['onclicka'] },
+  ];
+  const TPL_UZ = { adsgramTask: 'Reward URL (Vazifalar bloki)', adsgramQuick: 'Reward URL (tepadagi +1 bloki)', monetag: 'Postback URL', onclicka: 'Tasdiq (handler) URL' };
+
+  function adStateBadge(sv) {
+    if (!sv) return null;
+    return h('span', { class: 'badge ' + (sv.enabled ? 'ACTIVE' : 'CANCELLED'), text: sv.enabled ? 'Yoqilgan' : 'O‘chiq' + (sv.reason ? ' — ' + (AD_REASON_UZ[sv.reason] || sv.reason) : '') });
+  }
+
+  async function renderAds(guard) {
+    loading();
+    const res = await call('GET', '/ads/settings');
+    if (!guard()) return;
+    if (!ok(res)) return failed(res, render);
+    const d = res.data;
+    const inputs = {};
+    const errs = {};
+    const frag = document.createDocumentFragment();
+    frag.appendChild(h('p', { class: 'muted', text: 'Har bir provayder mustaqil: biri sozlanmasa yoki xato bersa, faqat o‘sha karta “Mavjud emas” bo‘ladi. Maxfiy tokenlar faqat serverdagi .env faylida saqlanadi.' }));
+
+    for (const g of AD_FIELDS) {
+      const card = h('div', { class: 'card' },
+        h('div', { class: 'card-head' }, h('b', { text: `${g.logo} ${g.title}` }), adStateBadge(d.state[g.stateKey])));
+      if (g.group === 'adsgram') {
+        card.appendChild(h('div', { class: 'ps', text: 'Tepadagi +1 holati: ' + (d.state.adsgramQuick.enabled ? 'yoqilgan' : 'o‘chiq' + (d.state.adsgramQuick.reason ? ' — ' + (AD_REASON_UZ[d.state.adsgramQuick.reason] || d.state.adsgramQuick.reason) : '')) }));
+      }
+      for (const [key, label, ph] of g.fields) {
+        inputs[key] = h('input', { type: 'text', maxlength: key.endsWith('Url') ? '300' : '40', placeholder: ph, autocomplete: 'off', autocapitalize: 'off', spellcheck: 'false', value: d.values[key] || '' });
+        card.appendChild(field(label, inputs[key]));
+      }
+      card.appendChild(h('div', { class: 'ps', text: `${g.tokenName}: ${d.tokens[g.tokenKey] ? '✅ .env da o‘rnatilgan' : '❌ .env da yo‘q'}` }));
+      for (const t of g.tpl) {
+        const url = d.callbackTemplates[t];
+        card.appendChild(h('div', { class: 'ps', text: TPL_UZ[t] + ':' }));
+        card.appendChild(h('div', { class: 'ps', style: 'user-select:all;word-break:break-all', text: url }));
+      }
+      errs[g.group] = h('p', { class: 'errtxt', role: 'alert' });
+      card.appendChild(errs[g.group]);
+      frag.appendChild(card);
+    }
+
+    const save = h('button', { class: 'btn block', type: 'button', text: 'Saqlash' });
+    const err = h('p', { class: 'errtxt', role: 'alert' });
+    save.addEventListener('click', async () => {
+      err.textContent = '';
+      const patch = {};
+      for (const [key, input] of Object.entries(inputs)) {
+        const v = input.value.trim();
+        if (v !== (d.values[key] || '')) patch[key] = v; // faqat o'zgargan maydonlar (bo'sh = o'chirish)
+      }
+      if (Object.keys(patch).length === 0) { toast('O‘zgarish yo‘q'); return; }
+      save.disabled = true;
+      const r = await call('PUT', '/ads/settings', patch);
+      save.disabled = false;
+      if (!ok(r)) {
+        const f = r.data && r.data.details && r.data.details.field;
+        err.textContent = (f ? `${f}: ` : '') + msgOf(r, 'Saqlab bo‘lmadi. Qayta urinib ko‘ring.');
+        return;
+      }
+      toast('Saqlandi');
+      render();
+    });
+    frag.append(err, save);
+    st.body.replaceChildren(frag);
+  }
+
   // ---------- Xavfsizlik: audit feed + foydalanuvchilar ----------
   const AUDIT_UZ = {
     ADMIN_SHOP_PRODUCT_CREATE: ['🛍', 'Mahsulot qo‘shildi'], ADMIN_SHOP_PRODUCT_UPDATE: ['✏️', 'Mahsulot tahrirlandi'],
     ADMIN_SHOP_PRODUCT_DEACTIVATE: ['🙈', 'Mahsulot yashirildi'], ADMIN_SHOP_PRODUCT_DELETE: ['🗑', 'Mahsulot o‘chirildi'],
     ADMIN_SHOP_ORDER_UPDATE: ['📦', 'Buyurtma yangilandi'], ADMIN_SHOP_ORDER_PROOF: ['🖼️', 'Isbot rasmi yuklandi'],
+    ADMIN_AD_SETTINGS_UPDATED: ['📺', 'Reklama sozlamalari yangilandi'],
     USER_BLOCKED: ['🚫', 'Foydalanuvchi bloklandi'], USER_UNBLOCKED: ['✅', 'Foydalanuvchi blokdan chiqarildi'],
   };
 

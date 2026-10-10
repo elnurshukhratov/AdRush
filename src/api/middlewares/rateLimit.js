@@ -48,4 +48,8 @@ const userLimiter = (limit, name = 'user') =>
 // AdsGram callback uchun alohida (AdsGram bitta IP dan ko'p so'rov yuborishi mumkin)
 const callbackLimiter = rateLimit({ ...base('adsgram'), windowMs: 60_000, limit: 600 });
 
-module.exports = { ipLimiter, userLimiter, callbackLimiter };
+// Monetag / OnClickA callbacklari uchun ham alohida hisoblagich (biri ikkinchisining limitini yemasin)
+const monetagCallbackLimiter = rateLimit({ ...base('monetag'), windowMs: 60_000, limit: 600 });
+const onclickaCallbackLimiter = rateLimit({ ...base('onclicka'), windowMs: 60_000, limit: 600 });
+
+module.exports = { ipLimiter, userLimiter, callbackLimiter, monetagCallbackLimiter, onclickaCallbackLimiter };

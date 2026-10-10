@@ -6,6 +6,14 @@ const { applyCoins, COIN_TX, CURRENCY } = require('../coins/coinService');
 
 const TX_OPTS = Object.freeze({ maxWait: 5000, timeout: 10000 });
 
+// Reklama provayderlari va joylari. Har bir sessiya aynan bitta (provider, placement) juftligiga bog'langan.
+//  task  — Vazifalar bo'limidagi karta (3 ta provayderning har biri uchun bittadan)
+//  quick — tepada doim turadigan +1 olmos tugmasi (FAQAT adsgram, vazifa blokidan ALOHIDA block ID)
+const PROVIDERS = Object.freeze(['adsgram', 'monetag', 'onclicka']);
+const PLACEMENTS = Object.freeze(['task', 'quick']);
+const providerOf = (session) => session.provider || 'adsgram'; // eski sessiyalar uchun xavfsiz standart
+const placementOf = (session) => session.placement || 'task';
+
 function fail(reason, extra = {}) {
   return { success: false, reason, ...extra };
 }
@@ -41,7 +49,10 @@ async function award(tx, session, now, meta) {
       userId: session.userId,
       externalRewardId: session.id, // UNIQUE — duplicate/replay ning DB darajasidagi kafolati
       metadata: {
-        verifyMode: config.adsgram.verifyMode,
+        provider: providerOf(session),
+        placement: placementOf(session),
+        // Monetag/OnClickA har doim server tasdig'i bilan; client_session rejimi faqat AdsGram uchun mavjud
+        verifyMode: providerOf(session) === 'adsgram' ? config.adsgram.verifyMode : 'server_confirmed',
         sessionCreatedAt: session.createdAt.toISOString(),
         elapsedMs: now.getTime() - session.createdAt.getTime(),
         diamonds,
@@ -66,6 +77,28 @@ async function award(tx, session, now, meta) {
   return { success: true, status: 'REWARDED', counted: true, reward: diamonds, diamonds: credit.balance };
 }
 
+/**
+ * Shu (provayder + joy) kartasi uchun oxirgi hisoblangan reklamadan beri cooldown qolgan millisekund (0 = o'tdi).
+ * Chaqiruvchi lockUser() ni ushlab turgan bo'lishi shart.
+ */
+async function cooldownRemainingMs(tx, session, now) {
+  if (config.ads.cooldownMs <= 0) return 0;
+  const last = await tx.adSession.findFirst({
+    where: {
+      userId: session.userId,
+      provider: providerOf(session),
+      placement: placementOf(session),
+      status: 'REWARDED',
+      rewardedAt: { not: null },
+    },
+    orderBy: { rewardedAt: 'desc' },
+    select: { rewardedAt: true },
+  });
+  if (!last) return 0;
+  const since = now.getTime() - last.rewardedAt.getTime();
+  return since < config.ads.cooldownMs ? config.ads.cooldownMs - since : 0;
+}
+
 /** Tranzaksiya wrapperi: externalRewardId unique buzilsa DUPLICATE_REWARD qaytaradi, qolganini tashlaydi. */
 async function runTx(fn) {
   try {
@@ -79,4 +112,15 @@ async function runTx(fn) {
   }
 }
 
-module.exports = { TX_OPTS, fail, award, runTx, startOfUtcDay };
+module.exports = {
+  TX_OPTS,
+  PROVIDERS,
+  PLACEMENTS,
+  providerOf,
+  placementOf,
+  fail,
+  award,
+  runTx,
+  startOfUtcDay,
+  cooldownRemainingMs,
+};

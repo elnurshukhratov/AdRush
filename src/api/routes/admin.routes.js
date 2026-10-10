@@ -28,6 +28,10 @@ router.get('/subscription', ctrl.getSubscription);
 router.put('/subscription', userLimiter(30, 'admin-subscription'), ctrl.setSubscription);
 router.delete('/subscription', userLimiter(30, 'admin-subscription'), ctrl.removeSubscription);
 
+// Reklama provayderlari sozlamalari (AdsGram block ID lar, Monetag zone, OnClickA spot). Maxfiy tokenlar bu yerda ko'rinmaydi.
+router.get('/ads/settings', ctrl.getAdSettings);
+router.put('/ads/settings', userLimiter(30, 'admin-ads-settings'), ctrl.setAdSettings);
+
 // Do'kon: mahsulotlar
 router.get('/shop/products', shop.listProducts);
 router.post('/shop/products', userLimiter(30, 'admin-shop-write'), shop.createProduct);

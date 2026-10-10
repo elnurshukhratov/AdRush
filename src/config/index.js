@@ -60,6 +60,27 @@ if (verifyMode === 'server_confirmed' && !rewardToken && !rewardTestMode) {
   );
 }
 
+// Monetag postback va OnClickA tasdig'i uchun O'ZIMIZ yaratgan maxfiy tokenlar (ikkala provayder ham imzo bermaydi).
+// Token yo'q bo'lsa provayder "enabled" bo'lmaydi (test rejimidan tashqari) — mukofot himoyasiz berilmaydi.
+const tokenRe = /^[A-Za-z0-9_-]{24,}$/;
+const monetagToken = (process.env.MONETAG_POSTBACK_TOKEN || '').trim();
+if (monetagToken && !tokenRe.test(monetagToken)) {
+  throw new Error('MONETAG_POSTBACK_TOKEN faqat A-Z a-z 0-9 _ - belgilaridan iborat va kamida 24 belgi bo\'lishi kerak');
+}
+const onclickaToken = (process.env.ONCLICKA_CALLBACK_TOKEN || '').trim();
+if (onclickaToken && !tokenRe.test(onclickaToken)) {
+  throw new Error('ONCLICKA_CALLBACK_TOKEN faqat A-Z a-z 0-9 _ - belgilaridan iborat va kamida 24 belgi bo\'lishi kerak');
+}
+if (rewardToken && monetagToken && rewardToken === monetagToken) {
+  throw new Error('MONETAG_POSTBACK_TOKEN ADSGRAM_REWARD_TOKEN dan farq qilishi kerak');
+}
+if (rewardToken && onclickaToken && rewardToken === onclickaToken) {
+  throw new Error('ONCLICKA_CALLBACK_TOKEN ADSGRAM_REWARD_TOKEN dan farq qilishi kerak');
+}
+if (monetagToken && onclickaToken && monetagToken === onclickaToken) {
+  throw new Error('MONETAG_POSTBACK_TOKEN va ONCLICKA_CALLBACK_TOKEN bir xil bo\'lmasligi kerak');
+}
+
 const BOT_MODES = ['polling', 'webhook'];
 const botMode = (process.env.BOT_MODE || 'polling').trim();
 if (!BOT_MODES.includes(botMode)) {
@@ -105,12 +126,25 @@ const config = Object.freeze({
   redisUrl: (process.env.REDIS_URL || '').trim(),
 
   adsgram: Object.freeze({
+    // FAQAT standart (fallback) qiymatlar: admin paneldan (AdSetting) o'zgartirilmagan bo'lsa ishlatiladi.
+    // Vazifalar kartasi: ADSGRAM_BLOCK_ID (vergul bilan berilgan bo'lsa birinchisi) yoki ADSGRAM_BLOCK_IDS ning birinchisi.
     blockId: (process.env.ADSGRAM_BLOCK_ID || '').trim(),
-    // Har bir reklama kartasi uchun alohida AdsGram blockId (vergul bilan). Bo'sh yoki kam bo'lsa — aylanib takrorlanadi / asosiy blockId ishlatiladi.
     blockIds: Object.freeze(parseList(process.env.ADSGRAM_BLOCK_IDS)),
+    // Tepada doim turadigan +1 olmos tugmasi uchun ALOHIDA block. Vazifalar bloki bilan hech qachon almashtirilmaydi.
+    quickBlockId: (process.env.ADSGRAM_QUICK_BLOCK_ID || '').trim(),
     verifyMode, // 'server_confirmed' | 'client_session'
     rewardToken, // bizning o'z tokenimiz (AdsGram imzo bermaydi)
     callbackIpAllowlist: Object.freeze(parseList(process.env.ADSGRAM_CALLBACK_IP_ALLOWLIST)),
+  }),
+
+  monetag: Object.freeze({
+    postbackToken: monetagToken, // Postback URL ga ?token=... sifatida qo'yiladi (Monetag imzo bermaydi)
+  }),
+
+  onclicka: Object.freeze({
+    callbackToken: onclickaToken, // Tasdiq URL ning YO'LIGA qo'yiladi: /api/onclicka/reward/<token> (OnClickA ?USERID= ni o'zi qo'shadi)
+    // Rasmiy hujjatdagi (onclicka.com/help/publishers/video-how-to-integrate-the-code) TMA video SDK manzili
+    defaultSdkUrl: 'https://js.onclckvd.com/in-stream-ad-admanager/tma.js',
   }),
 
   bot: Object.freeze({
@@ -164,8 +198,8 @@ const config = Object.freeze({
     rewardTestMode, // faqat development/test (production'da config xato beradi)
     sessionTtlMs: int('AD_SESSION_TTL_SEC', 600, { min: 30 }) * 1000,
     minDurationMs: int('AD_MIN_DURATION_MS', 8000),
-    cooldownMs: int('AD_COOLDOWN_MS', 5000), // bitta karta uchun: olmos berilgach shuncha vaqtdan keyin shu kartadan qayta ko'rish mumkin
-    slots: Math.min(int('AD_SLOTS', 5, { min: 1 }), 10), // Vazifalardagi reklama kartalari soni (1..10)
+    cooldownMs: int('AD_COOLDOWN_MS', 5000), // (provayder + joy) bo'yicha alohida: olmos berilgach shuncha vaqtdan keyin shu kartadan qayta ko'rish mumkin
+    slots: 3, // Vazifalardagi reklama kartalari soni = provayderlar soni (AdsGram, Monetag, OnClickA). Endi sozlanmaydi.
     dailyCap: int('AD_DAILY_CAP', 0), // 0 = cheklovsiz
   }),
 });

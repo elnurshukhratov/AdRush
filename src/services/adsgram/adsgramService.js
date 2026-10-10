@@ -63,13 +63,20 @@ function parseRewardCallback(req) {
   return BigInt(raw);
 }
 
-/** Mine App ga kerakli AdsGram sozlamalari (blockId ommaviy ma'lumot). */
-function getClientConfig() {
-  return {
-    blockId: config.adsgram.blockId || null,
-    blockIds: config.adsgram.blockIds,
-    verifyMode: config.adsgram.verifyMode,
-  };
+/**
+ * Reward URL dagi `placement` (bizning o'z statik parametrimiz): 'task' | 'quick'. Berilmasa 'task' (eski URL lar bilan mos).
+ * Tepadagi +1 block (quick) Reward URL ida placement=quick bo'lishi shart — shunda uning tasdig'i vazifa kartasiga bog'lanmaydi.
+ */
+function parseRewardPlacement(req) {
+  const raw = req.query.placement;
+  if (raw === undefined) return 'task';
+  if (raw !== 'task' && raw !== 'quick') throw new ApiError(400, 'INVALID_REQUEST', 'placement noto\'g\'ri');
+  return raw;
 }
 
-module.exports = { verifyCallbackSource, parseRewardCallback, getClientConfig };
+/** Mine App ga kerakli AdsGram sozlamalari: faqat rejim. Block ID lar GET /api/ads/config va sessiya javobida (adSettingsService). */
+function getClientConfig() {
+  return { verifyMode: config.adsgram.verifyMode };
+}
+
+module.exports = { verifyCallbackSource, parseRewardCallback, parseRewardPlacement, getClientConfig, safeEqual };

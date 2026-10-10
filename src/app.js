@@ -37,8 +37,13 @@ function requestLogger() {
       return 'info';
     },
     serializers: {
-      // AdsGram Reward URL da ?token=... bor — query logga TUSHMASIN
-      req: (req) => ({ id: req.id, method: req.method, url: String(req.originalUrl || req.url).split('?')[0], ip: req.ip }),
+      // Reward/postback URL larda maxfiy token bor (AdsGram/Monetag: ?token=..., OnClickA: /onclicka/reward/<token>) — logga TUSHMASIN
+      req: (req) => ({
+        id: req.id,
+        method: req.method,
+        url: String(req.originalUrl || req.url).split('?')[0].replace(/(\/onclicka\/reward\/)[^/?]+/, '$1:token'),
+        ip: req.ip,
+      }),
       res: (res) => ({ statusCode: res.statusCode }),
     },
   });

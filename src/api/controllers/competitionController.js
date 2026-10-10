@@ -8,7 +8,6 @@ const { listActive, toPublic, countParticipants } = require('../../services/comp
 const { getUserStats } = require('../../services/leaderboard/leaderboardService');
 const { getActivePrizes, toPublicPrize } = require('../../services/competition/prizeService');
 const { publicHistory } = require('../../services/competition/winnerService');
-const { getClientConfig } = require('../../services/adsgram/adsgramService');
 const { placeBet, listMyBets, getActiveBetSummary } = require('../../services/competition/betService');
 const { getBalance } = require('../../services/coins/coinService');
 
@@ -80,7 +79,6 @@ const current = asyncHandler(async (req, res) => {
     secondsLeft: first ? first.secondsLeft : 0,
     secondsToStart: first ? first.secondsToStart : 0,
     serverTime: new Date(now).toISOString(),
-    adsgram: { blockId: getClientConfig().blockId, quickBlockId: getClientConfig().quickBlockId },
     ads: { minDurationMs: config.ads.minDurationMs, cooldownMs: config.ads.cooldownMs },
     rush: {
       adReward: config.rush.adReward,

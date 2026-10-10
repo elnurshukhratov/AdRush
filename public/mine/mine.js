@@ -60,7 +60,7 @@
 
   const state = {
     view: 'home', refreshSec: 15, busy: false, busyLabel: '',
-    cooldownMs: 5000, blockId: null, pollId: null, slot: 0, slotCount: 0,
+    cooldownMs: 5000, pollId: null, active: null, adsLoaded: false, adsAt: 0, adsBusy: false,
     loaded: false, statsOk: false, isAdmin: false, backFn: null, gated: false, gateKind: null, subChannel: null, subBusy: false,
     coinItems: [], shopItems: [],
     // Olmos / Rush Coin: hammasi serverdan keladi (faqat ko'rsatish uchun saqlanadi)
@@ -132,7 +132,12 @@
   }
   /** Xabar kalit bilan beriladi (til o'zgarsa o'zi tarjima bo'ladi); kalit bo'sh bo'lsa tozalanadi. */
   function say(key, kind, vars) {
-    const m = (adSlots[state.slot] || adSlots[0] || { msg: $('msg') }).msg; // faol reklama kartasining xabari
+    const u = state.active;
+    const m = u && u.msg; // faol reklama kartasining xabari
+    if (!m) { // tepadagi +1 tugmada xabar joyi yo'q — qisqa toast
+      if (key) toast(tt(key, vars), kind === 'bad');
+      return;
+    }
     if (key) tx(m, key, vars); else plain(m, '');
     m.className = 'msg center' + (kind ? ' ' + kind : '');
   }
@@ -294,10 +299,8 @@
 
 
   /** Tugmadan 6-8 ta tanga/uchqun sachraydi. */
-  function burstSparks() {
-    if (reduceMotion) return;
-    const wrap = document.querySelector('.cta-wrap');
-    if (!wrap) return;
+  function burstSparks(wrap) {
+    if (reduceMotion || !wrap) return;
     const n = 6 + Math.floor(Math.random() * 3);
     for (let i = 0; i < n; i += 1) {
       const sp = el('i', 'spark');
@@ -499,126 +502,110 @@
     if (view === 'admin' && window.AdRushAdmin) window.AdRushAdmin.onShow();
   }
 
-  // ---------- Reklama kartalari (bir nechta slot) ----------
-  // Slot 0 — HTML dagi asosiy karta (#taskAd); qolganlari uning nusxasi. Navbat/cooldown hamma slotga umumiy (bir vaqtda bitta reklama).
-  const adSlots = []; // { card, btn, label, plus, msg, reward }
-  const DEFAULT_AD_SLOTS = 5;
-  function registerSlot(card) {
-    adSlots.push({
-      card,
-      btn: card.querySelector('.cta'),
-      label: card.querySelector('.cta > span'),
-      plus: card.querySelector('.plus'),
-      msg: card.querySelector('p.msg'),
-      reward: card.querySelector('.task-head .chip-sm'),
-      coolUntil: 0, // shu kartadan keyingi reklamagacha (cooldown)
-      noAdUntil: 0, // shu karta uchun AdsGram reklama bermadi
+  // ---------- Reklama joylari: 3 ta vazifa kartasi + tepadagi +1 tugma ----------
+  // Har bir joy (unit) MUSTAQIL: o'z provayderi, o'z holati (yoqilgan / cooldown / "reklama yo'q") va o'z xabari bor.
+  // Karta provayderi HTML dagi data-provider dan olinadi. Block/zone/spot ID lari klientda SAQLANMAYDI: ular faqat shu joy
+  // uchun ochilgan server sessiyasining javobidan olinadi — shuning uchun biror joyning ID si boshqasida ishlatilmaydi.
+  // Tepadagi +1 tugma — FAQAT AdsGram (placement=quick), vazifa kartasidan alohida block ID bilan (serverda belgilanadi).
+  const AD_PROVIDERS = ['adsgram', 'monetag', 'onclicka'];
+  const adUnits = []; // { key, provider, placement, card, btn, label, plus, msg, reward, enabled, coolUntil, noAdUntil }
+
+  function registerAdUnits() {
+    document.querySelectorAll('.ad-slot[data-provider]').forEach((card) => {
+      const provider = card.dataset.provider;
+      if (!AD_PROVIDERS.includes(provider)) return;
+      const unit = {
+        key: provider + ':task', provider, placement: 'task', card,
+        btn: card.querySelector('.cta'),
+        label: card.querySelector('.cta > span'),
+        plus: card.querySelector('.plus'),
+        msg: card.querySelector('p.msg'),
+        reward: card.querySelector('.task-head .chip-sm'),
+        enabled: null, // null = hali noma'lum (config yuklanmagan)
+        coolUntil: 0, // shu kartadan keyingi reklamagacha (cooldown)
+        noAdUntil: 0, // shu karta provayderi reklama bermadi
+      };
+      adUnits.push(unit);
+      unit.btn.addEventListener('click', () => watchAd(unit));
     });
+    const tw = $('topWatch');
+    if (tw) {
+      const unit = {
+        key: 'adsgram:quick', provider: 'adsgram', placement: 'quick', card: null,
+        btn: tw, label: $('topWatchLabel'), plus: null, msg: null, reward: null,
+        enabled: null, coolUntil: 0, noAdUntil: 0,
+      };
+      adUnits.push(unit);
+      tw.addEventListener('click', () => watchAd(unit));
+    }
   }
 
-  /** Reklama kartalari sonini n ga keltiradi (ortiqchasi yashiriladi, yetmasa nusxa olinadi). */
-  function ensureAdSlots(n) {
-    const first = $('taskAd');
-    if (!first) return;
-    const want = Math.max(1, Math.min(10, n | 0));
-    if (adSlots.length && want === state.slotCount) return;
-    if (!adSlots.length) registerSlot(first);
-    let last = adSlots[adSlots.length - 1].card;
-    while (adSlots.length < want) {
-      const idx = adSlots.length;
-      const c = first.cloneNode(true);
-      c.removeAttribute('id');
-      c.querySelectorAll('[id]').forEach((e) => e.removeAttribute('id'));
-      c.querySelector('.slot-n').textContent = '#' + (idx + 1);
-      c.querySelector('.cta').classList.remove('ok', 'busy');
-      c.querySelector('.plus').classList.remove('go');
-      const m = c.querySelector('p.msg'); m.className = 'msg center'; m.textContent = ''; delete m.dataset.i18n; delete m.dataset.i18nVars;
-      last.after(c);
-      last = c;
-      registerSlot(c);
-      adSlots[idx].btn.addEventListener('click', () => watchAd(idx));
-      i18n.apply(c);
+  /**
+   * GET /api/ads/config: qaysi joy yoqilgan (provayder sozlangan). Faqat holat olinadi — ID lar sessiya javobidan.
+   * Bitta provayder sozlanmagan/xato bo'lsa faqat o'sha karta "Mavjud emas" bo'ladi, qolganlari ishlayveradi.
+   */
+  async function loadAdConfig(force) {
+    if (state.adsBusy) return;
+    if (!force && Date.now() - state.adsAt < (state.adsLoaded ? 30000 : 5000)) return;
+    state.adsBusy = true;
+    try {
+      const res = await api('GET', '/api/ads/config');
+      state.adsAt = Date.now();
+      if (!ok(res)) return;
+      const d = res.data;
+      adUnits.forEach((u) => {
+        const c = u.placement === 'quick' ? d.quick : d.providers && d.providers[u.provider];
+        u.enabled = Boolean(c && c.enabled);
+      });
+      state.adsLoaded = true;
+    } finally {
+      state.adsBusy = false;
+      updateWatchState();
     }
-    state.slotCount = want;
-    adSlots.forEach((s, i) => {
-      s.card.hidden = i >= want;
-      const nEl = s.card.querySelector('.slot-n');
-      if (nEl) nEl.hidden = want < 2; // bitta karta bo'lsa raqam ko'rsatilmaydi
-    });
-    renderRates();
-    updateWatchState();
   }
 
   // ---------- Reklama tugmasi holati ----------
-  /** Hozir bosish mumkin bo'lgan birinchi ko'rinadigan karta (yuqoridagi tugma uchun); yo'q bo'lsa -1. */
-  function freeSlotIndex() {
-    const now = Date.now();
-    return adSlots.findIndex((sl) => !sl.card.hidden && sl.coolUntil <= now && sl.noAdUntil <= now);
-  }
-
   function updateWatchState() {
     const now = Date.now();
     const secs = (t) => Math.max(0, Math.ceil((t - now) / 1000));
-    const list = adSlots.length ? adSlots : [{ btn: $('watch'), label: $('watchLabel'), coolUntil: 0, noAdUntil: 0, card: { hidden: false } }];
-    let free = -1;
-    let minWait = 0;
-    list.forEach((sl, i) => {
-      const cd = secs(sl.coolUntil);
-      const noAd = secs(sl.noAdUntil); // shu karta uchun AdsGram reklama bermadi -> faqat shu tugma vaqtincha o'chiq
-      const mine = i === state.slot;
-      sl.btn.disabled = state.busy || !state.loaded || cd > 0 || noAd > 0; // bir vaqtda bitta reklama (server ham bitta PENDING sessiya ushlaydi)
-      sl.btn.classList.toggle('busy', state.busy && mine);
-      if (state.busy && mine) tx(sl.label, state.busyLabel || 'watch.loading');
-      else if (!state.loaded) tx(sl.label, 'watch.loading');
-      else if (cd > 0) tx(sl.label, 'watch.cooldown', { n: cd });
-      else if (noAd > 0) tx(sl.label, 'watch.no_ad', { n: noAd });
-      else tx(sl.label, 'watch.label', { n: state.diamondPerAd });
-      if (!sl.card.hidden) {
-        const wait = Math.max(cd, noAd);
-        if (wait === 0 && free < 0) free = i;
-        if (wait > 0 && (minWait === 0 || wait < minWait)) minWait = wait;
+    const ready = state.loaded && state.adsLoaded;
+    adUnits.forEach((u) => {
+      const cd = secs(u.coolUntil);
+      const noAd = secs(u.noAdUntil);
+      const mine = state.active === u;
+      const off = ready && u.enabled === false;
+      // bir vaqtda bitta reklama (server ham bitta PENDING sessiya ushlaydi)
+      u.btn.disabled = state.busy || !ready || off || cd > 0 || noAd > 0;
+      if (u.placement === 'quick') {
+        u.btn.classList.toggle('busy', state.busy);
+        u.label.textContent = state.busy ? '…' : cd > 0 ? cd + 's' : noAd > 0 ? noAd + 's' : '+' + nf.format(state.diamondPerAd);
+        return;
       }
+      u.btn.classList.toggle('busy', state.busy && mine);
+      u.card.classList.toggle('off', off);
+      if (state.busy && mine) tx(u.label, state.busyLabel || 'watch.loading');
+      else if (!ready) tx(u.label, 'watch.loading');
+      else if (off) tx(u.label, 'watch.off');
+      else if (cd > 0) tx(u.label, 'watch.cooldown', { n: cd });
+      else if (noAd > 0) tx(u.label, 'watch.no_ad', { n: noAd });
+      else tx(u.label, 'watch.label', { n: state.diamondPerAd });
     });
-    const tw = $('topWatch');
-    if (tw) { // Yuqoridagi tugma: birinchi bo'sh kartani ochadi; hammasi kutayotgan bo'lsa eng yaqin kutish vaqtini ko'rsatadi
-      tw.disabled = state.busy || !state.loaded || free < 0;
-      tw.classList.toggle('busy', state.busy);
-      $('topWatchLabel').textContent = state.busy ? '…' : free >= 0 ? '+' + nf.format(state.diamondPerAd) : minWait + 's';
-    }
     updateConvertState();
   }
 
-  /** AdsGram reklama bermasa (no fill / SDK yo'q) tugmalarni NO_AD_RETRY_MS ga o'chirib qo'yadi, keyin o'zi qayta yoqiladi. */
+  /** Provayder reklama bermasa (no fill / SDK yo'q) FAQAT shu joyning tugmasi NO_AD_RETRY_MS ga o'chadi, keyin o'zi qayta yoqiladi. */
   const NO_AD_RETRY_MS = 60000;
   function markNoAd() {
-    const sl = adSlots[state.slot];
-    if (sl) sl.noAdUntil = Date.now() + NO_AD_RETRY_MS; // faqat faol karta
+    const u = state.active;
+    if (u) u.noAdUntil = Date.now() + NO_AD_RETRY_MS;
     updateWatchState();
   }
 
   function startCooldown(ms) {
-    const sl = adSlots[state.slot];
-    if (sl && ms > 0) sl.coolUntil = Date.now() + ms; // faqat shu karta kutadi, qolganlari mustaqil
+    const u = state.active;
+    if (u && ms > 0) u.coolUntil = Date.now() + ms; // faqat shu joy kutadi, qolganlari mustaqil
     updateWatchState();
   }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
   function renderProfile() {
     renderMyId();
@@ -662,7 +649,7 @@
     $('homeError').hidden = true;
     const d = res.data;
     if (Number.isInteger(d.diamondPerAd) && d.diamondPerAd > 0) state.diamondPerAd = d.diamondPerAd;
-    if (Number.isInteger(d.adSlots) && d.adSlots > 0) ensureAdSlots(d.adSlots);
+    loadAdConfig(false); // karta holatlari (provayder sozlanganmi); o'zi throttle qiladi
     const cr = d.convertRate;
     if (cr && [cr.diamonds, cr.rush, cr.stepDiamonds, cr.stepRush].every((x) => Number.isInteger(x) && x > 0)) {
       state.rate = { d: cr.diamonds, r: cr.rush, sd: cr.stepDiamonds, sr: cr.stepRush };
@@ -678,7 +665,7 @@
   async function retryAll() {
     $('homeError').hidden = true;
     haptic('light');
-    await Promise.all([refresh(), loadShopPreview()]);
+    await Promise.all([refresh(), loadShopPreview(), loadAdConfig(true)]);
     state.loaded = true;
     updateWatchState();
     if (!state.pollId) schedule();
@@ -691,10 +678,10 @@
     plain($('convRate'), rate);
     tx($('homeTasksHint'), 'home.tasks_hint', { n: nf.format(state.diamondPerAd) });
     tx($('homeRef'), 'home.ref', { n: nf.format(state.referralDiamondReward) });
-    adSlots.forEach((sl) => { sl.reward.textContent = '+' + nf.format(state.diamondPerAd) + ' 💎'; });
+    adUnits.forEach((u) => { if (u.reward) u.reward.textContent = '+' + nf.format(state.diamondPerAd) + ' 💎'; });
     $('taskRefReward').textContent = '+' + nf.format(state.referralDiamondReward) + ' 💎';
     $('refReward').textContent = '+' + nf.format(state.referralDiamondReward) + ' 💎';
-    if (!state.busy) adSlots.forEach((sl) => { sl.plus.textContent = '+' + nf.format(state.diamondPerAd) + ' 💎'; });
+    if (!state.busy) adUnits.forEach((u) => { if (u.plus) u.plus.textContent = '+' + nf.format(state.diamondPerAd) + ' 💎'; });
     updateConvertState();
   }
 
@@ -897,19 +884,58 @@
     const gained = (data && Number.isInteger(data.reward) && data.reward) || state.diamondPerAd;
     say('watch.credited', 'good', { n: gained });
     coinHist.loadedAt = 0;
-    const sl = adSlots[state.slot] || adSlots[0];
-    sl.plus.textContent = '+' + nf.format(gained) + ' 💎';
     haptic('success');
-    const btn = sl.btn;
-    btn.classList.add('ok');
-    setTimeout(() => btn.classList.remove('ok'), 1400);
-    const plus = sl.plus;
-    plus.classList.remove('go');
-    void plus.offsetWidth;
-    plus.classList.add('go');
-    burstSparks();
+    const u = state.active;
+    if (u && u.card) {
+      const btn = u.btn;
+      btn.classList.add('ok');
+      setTimeout(() => btn.classList.remove('ok'), 1400);
+      if (u.plus) {
+        u.plus.textContent = '+' + nf.format(gained) + ' 💎';
+        u.plus.classList.remove('go');
+        void u.plus.offsetWidth;
+        u.plus.classList.add('go');
+      }
+      burstSparks(u.card.querySelector('.cta-wrap'));
+    }
     if (data && Number.isInteger(data.diamonds)) setBalances({ diamonds: data.diamonds }, true);
     if (state.cooldownMs) startCooldown(state.cooldownMs);
+  }
+
+  // ---------- Provayder SDK lari: har biri o'z skripti va o'z ID si bilan, bir-biridan mustaqil ----------
+  // Har bir runner natijasi: { status: 'done' | 'closed' | 'error' | 'unavailable', why? }.
+  // 'done' — "reklama ko'rsatildi" xolos; olmos FAQAT server tasdig'idan keyin beriladi (POST /api/ads/reward + provayder postbacki).
+  const ID_RE = /^\d{1,12}$/;
+  const HTTPS_RE = /^https:\/\/[^\s"'<>]+$/i;
+  const errWhy = (e) => String((e && (e.message || e.description || e.state)) || e || 'unknown').slice(0, 140);
+  const sdkLoads = new Map(); // kalit -> Promise (skript bir marta yuklanadi; xatoda kalit o'chadi, qayta urinish mumkin)
+
+  const withTimeout = (p, ms) => Promise.race([p, new Promise((_r, rej) => setTimeout(() => rej(new Error('timeout')), ms))]);
+
+  async function waitFor(test, ms) {
+    const t0 = Date.now();
+    while (!test() && Date.now() - t0 < ms) await sleep(100);
+    return test();
+  }
+
+  /** Provayder skriptini yuklaydi (bitta kalit = bitta skript). attrs.src majburiy. isReady() — global tayyormi. */
+  function loadSdk(key, attrs, isReady, ms) {
+    if (isReady()) return Promise.resolve();
+    const known = sdkLoads.get(key);
+    if (known) return known;
+    const p = new Promise((resolve, reject) => {
+      const sc = document.createElement('script');
+      sc.async = true;
+      Object.keys(attrs).forEach((k) => sc.setAttribute(k, attrs[k]));
+      const fail = (msg) => { clearTimeout(timer); sc.remove(); reject(new Error(msg)); };
+      const timer = setTimeout(() => fail('SDK timeout'), ms);
+      sc.onload = () => { waitFor(isReady, 2000).then((r) => (r ? (clearTimeout(timer), resolve()) : fail('SDK not ready'))); };
+      sc.onerror = () => fail('SDK load failed');
+      document.head.appendChild(sc);
+    });
+    sdkLoads.set(key, p);
+    p.catch(() => { sdkLoads.delete(key); });
+    return p;
   }
 
   /** AdsGram SDK (defer) tayyor bo'lguncha kutadi; ms ichida chiqmasa null. */
@@ -919,66 +945,147 @@
     return window.Adsgram || null;
   }
 
-  async function watchAd(slotIdx) {
-    if (state.busy || state.gated) return;
-    state.slot = Number.isInteger(slotIdx) && adSlots[slotIdx] ? slotIdx : 0; // qaysi kartadan bosildi
-    adSlots.forEach((sl) => { sl.msg.className = 'msg center'; plain(sl.msg, ''); });
+  /** AdsGram: window.Adsgram.init({ blockId }).show() — blockId faqat shu joyning sessiya javobidan (task yoki quick). */
+  async function runAdsgram(cfg) {
+    const blockId = cfg && cfg.blockId ? String(cfg.blockId) : '';
+    if (!blockId) return { status: 'unavailable' };
+    // sad.min.js "defer" bilan yuklanadi — sekin tarmoqda hali tayyor bo'lmasligi mumkin, biroz kutamiz
+    const sdk = await waitAdsgram(4000);
+    if (!sdk) return { status: 'unavailable' };
+    // Har ko'rsatishda YANGI controller: xatodan/yopilgandan keyin eski controller buzuq holatda qolib, keyingi reklamani yopib yuborishi mumkin edi.
+    let ctrl;
+    try { ctrl = sdk.init({ blockId }); } catch (e) { console.warn('[AdsGram] init xatosi:', e); return { status: 'unavailable' }; }
+    let result;
+    try {
+      result = await ctrl.show();
+    } catch (e) {
+      result = e; // AdsGram xatoda ham result obyektini reject qiladi
+    }
+    if (result && result.done) return { status: 'done' };
+    try { if (ctrl && typeof ctrl.destroy === 'function') ctrl.destroy(); } catch (_e) { /* allaqachon yopilgan */ }
+    console.warn('[AdsGram] reklama tugallanmadi:', result);
+    const why = result ? [result.state, result.description].filter(Boolean).join(': ').slice(0, 140) : '';
+    // Haqiqiy AdsGram xatosi (reklama topilmadi / yuklanmadi) yoki foydalanuvchi o'zi yopdi / o'tkazib yubordi
+    if (result && result.error === true) return { status: 'error', why: why || 'unknown' };
+    return { status: 'closed', why };
+  }
+
+  /**
+   * Monetag (TMA SDK): <script data-zone="ZONE" data-sdk="show_ZONE"> global show_ZONE({ ymid, requestVar }) yaratadi.
+   * ymid = bizning sessiya UUID imiz (server postbackda shu orqali sessiyani topadi). Rewarded Interstitial erta yopilganda ham
+   * resolve bo'ladi — shuning uchun natija mukofot uchun ISHLATILMAYDI; mukofotni faqat Monetag server postbacki beradi.
+   */
+  async function runMonetag(cfg) {
+    const zoneId = cfg && cfg.zoneId ? String(cfg.zoneId) : '';
+    const sdkUrl = cfg && cfg.sdkUrl ? String(cfg.sdkUrl) : '';
+    const ymid = cfg && cfg.ymid ? String(cfg.ymid) : '';
+    if (!ID_RE.test(zoneId) || !HTTPS_RE.test(sdkUrl) || !ymid) return { status: 'unavailable' };
+    const fn = 'show_' + zoneId;
+    try {
+      await loadSdk('monetag:' + zoneId + ':' + sdkUrl, { src: sdkUrl, 'data-zone': zoneId, 'data-sdk': fn }, () => typeof window[fn] === 'function', 8000);
+    } catch (e) {
+      console.warn('[Monetag] SDK yuklanmadi:', e);
+      return { status: 'unavailable' };
+    }
+    let result;
+    try {
+      result = await window[fn]({ ymid, requestVar: String(cfg.requestVar || '') });
+    } catch (e) {
+      console.warn('[Monetag] reklama ko\'rsatilmadi:', e);
+      return { status: 'error', why: errWhy(e) };
+    }
+    // Hujjat: foydalanuvchi reklamani erta yopsa ham promise resolve bo'ladi; non_valued = mukofot yo'q (faqat UX, qaror serverda)
+    if (result && result.reward_event_type === 'non_valued') return { status: 'closed' };
+    return { status: 'done' };
+  }
+
+  /**
+   * OnClickA (TMA video): window.initCdTma({ id: SPOT-ID }) -> show funksiyasi; show() Promise reklama ko'rsatilganini bildiradi.
+   * Hujjatda reward ID/imzo yo'q: tasdiq faqat server tomonidan (?USERID=) keladi — olmos shundan keyin beriladi.
+   */
+  const onclickaShows = new Map(); // spotId -> Promise<show>
+  async function runOnclicka(cfg) {
+    const spotId = cfg && cfg.spotId ? String(cfg.spotId) : '';
+    const sdkUrl = cfg && cfg.sdkUrl ? String(cfg.sdkUrl) : '';
+    if (!ID_RE.test(spotId) || !HTTPS_RE.test(sdkUrl)) return { status: 'unavailable' };
+    let show;
+    try {
+      await loadSdk('onclicka:' + sdkUrl, { src: sdkUrl }, () => typeof window.initCdTma === 'function', 8000);
+      let p = onclickaShows.get(spotId);
+      if (!p) {
+        p = Promise.resolve(window.initCdTma({ id: Number(spotId) }));
+        onclickaShows.set(spotId, p);
+      }
+      try {
+        show = await withTimeout(p, 10000);
+      } catch (e) {
+        onclickaShows.delete(spotId);
+        throw e;
+      }
+      if (typeof show !== 'function') { onclickaShows.delete(spotId); throw new Error('show funksiyasi yo\'q'); }
+    } catch (e) {
+      console.warn('[OnClickA] SDK tayyor emas:', e);
+      return { status: 'unavailable' };
+    }
+    let result;
+    try {
+      result = await show();
+    } catch (e) {
+      console.warn('[OnClickA] reklama ko\'rsatilmadi:', e);
+      return { status: 'error', why: errWhy(e) };
+    }
+    if (result === false) return { status: 'closed' };
+    return { status: 'done' };
+  }
+
+  const AD_RUNNERS = { adsgram: runAdsgram, monetag: runMonetag, onclicka: runOnclicka };
+
+  async function watchAd(unit) {
+    if (state.busy || state.gated || !unit || unit.enabled === false || !AD_RUNNERS[unit.provider]) return;
+    state.active = unit; // qaysi joydan bosildi
+    adUnits.forEach((u) => { if (u.msg) { u.msg.className = 'msg center'; plain(u.msg, ''); } });
     setBusy(true, 'watch.preparing');
     say('');
     haptic('light');
     if (atLeast('6.2')) tgTry(() => tg.enableClosingConfirmation());
     try {
-      const s = await api('POST', '/api/ads/session', { slot: state.slot }, { retry: false });
-      if (!ok(s)) { say(failKey(s), 'bad'); haptic('error'); return; }
-
-      const cfg = s.data.adsgram || {};
-      const ids = Array.isArray(cfg.blockIds) ? cfg.blockIds.filter(Boolean) : [];
-      if (cfg.blockId) state.blockId = cfg.blockId;
-      // Har bir karta o'z blockId siga ega bo'lishi mumkin (ADSGRAM_BLOCK_IDS); yetmasa aylanib takrorlanadi, bo'lmasa asosiy blockId
-      const blockId = (ids.length ? ids[state.slot % ids.length] : null) || cfg.blockId || state.blockId;
-      // sad.min.js "defer" bilan yuklanadi — sekin tarmoqda hali tayyor bo'lmasligi mumkin, biroz kutamiz
-      const sdk = await waitAdsgram(4000);
-      if (!blockId || !sdk) { say('watch.unavailable', 'bad'); markNoAd(); return; }
-      const bk = String(blockId);
-
-      // Har ko'rsatishda YANGI controller: xatodan/yopilgandan keyin eski controller buzuq holatda qolib,
-      // keyingi reklamani darhol yopib yuborishi mumkin edi.
-      let ctrl;
-      try { ctrl = sdk.init({ blockId: bk }); } catch (e) { console.warn('[AdsGram] init xatosi:', e); say('watch.unavailable', 'bad'); markNoAd(); return; }
+      // Sessiya shu (provider, placement) uchun ochiladi; javobda FAQAT shu provayderning identifikatorlari qaytadi
+      const s = await api('POST', '/api/ads/session', { provider: unit.provider, placement: unit.placement }, { retry: false });
+      if (!ok(s)) {
+        if (s.data && s.data.reason === 'PROVIDER_UNAVAILABLE') { unit.enabled = false; state.adsAt = 0; } // faqat shu joy "Mavjud emas"
+        say(failKey(s), 'bad');
+        haptic('error');
+        return;
+      }
+      const sess = s.data;
+      if (sess.provider !== unit.provider || sess.placement !== unit.placement) { say('watch.unavailable', 'bad'); markNoAd(); return; }
 
       setBusy(true, 'watch.showing');
-      let result;
-      try {
-        result = await ctrl.show();
-      } catch (e) {
-        result = e; // AdsGram xatoda ham result obyektini reject qiladi
+      const out = await AD_RUNNERS[unit.provider](sess[unit.provider]);
+      if (out.status === 'unavailable') { say('watch.unavailable', 'bad'); markNoAd(); return; }
+      if (out.status === 'error') {
+        say('watch.ad_error', 'bad', { d: out.why || 'unknown' });
+        markNoAd(); // reklama yo'q/yuklanmadi -> faqat shu tugma bosilmaydigan bo'ladi
+        haptic('warning');
+        return;
       }
-      if (!result || !result.done) {
-        try { if (ctrl && typeof ctrl.destroy === 'function') ctrl.destroy(); } catch (_e) { /* allaqachon yopilgan */ }
-        console.warn('[AdsGram] reklama tugallanmadi:', result);
-        if (result && result.error === true) {
-          // Haqiqiy AdsGram xatosi (reklama topilmadi / yuklanmadi / ko'rsatilmadi) — sababini ekranda ko'rsatamiz
-          const why = [result.state, result.description].filter(Boolean).join(': ').slice(0, 140) || 'unknown';
-          say('watch.ad_error', 'bad', { d: why });
-          markNoAd(); // reklama yo'q/yuklanmadi -> tugma bosilmaydigan bo'ladi
-        } else {
-          // foydalanuvchi o'zi yopdi / o'tkazib yubordi YOKI AdsGram reklamani o'zi yopdi: sababini (state/description) ko'rsatamiz
-          const why = result ? [result.state, result.description].filter(Boolean).join(': ').slice(0, 140) : '';
-          if (why) say('watch.not_finished_d', 'bad', { d: why }); else say('watch.not_finished', 'bad');
-        }
+      if (out.status === 'closed') {
+        if (out.why) say('watch.not_finished_d', 'bad', { d: out.why }); else say('watch.not_finished', 'bad');
         haptic('warning');
         return;
       }
 
-      // Klient faqat "ko'rdim" deydi — hisoblash qarori serverda (validatsiya + tranzaksiya)
+      // Klient faqat "ko'rdim" deydi — hisoblash qarori serverda (validatsiya + provayder tasdig'i + tranzaksiya)
       setBusy(true, 'watch.checking');
-      const r = await api('POST', '/api/ads/reward', { sessionId: s.data.sessionId }, { retry: false });
+      const r = await api('POST', '/api/ads/reward', { sessionId: sess.sessionId }, { retry: false });
       if (ok(r)) {
         if (r.data.status === 'PENDING_CONFIRMATION') {
           setBusy(true, 'watch.confirming');
           say('watch.wait_confirm');
-          if (await waitConfirmation(s.data.sessionId)) celebrate(null);
+          if (await waitConfirmation(sess.sessionId)) celebrate(null);
           else { say('watch.no_confirm', 'bad'); haptic('warning'); }
+        } else if (r.data.status === 'REWARDED' && r.data.counted === false) {
+          celebrate(null); // Monetag: server postbacki claimdan oldin kelib olmosni allaqachon bergan
         } else if (r.data.counted === false) {
           say('reason.DUPLICATE_REWARD', 'bad');
         } else {
@@ -1339,11 +1446,9 @@
   async function init() {
     tgSetup();
     initTheme();
-    ensureAdSlots(DEFAULT_AD_SLOTS);
+    registerAdUnits();
     initLang();
     document.querySelectorAll('[data-go]').forEach((b) => b.addEventListener('click', () => go(b.dataset.go)));
-    $('watch').addEventListener('click', () => watchAd(0));
-    $('topWatch').addEventListener('click', () => { const i = freeSlotIndex(); if (i >= 0) watchAd(i); });
     initConvert();
     $('shopOrdersMore').addEventListener('click', () => loadOrders(true).catch(() => {}));
     initReferral();

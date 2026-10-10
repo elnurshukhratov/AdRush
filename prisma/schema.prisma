@@ -113,7 +113,11 @@ model AdSession {
   id           String          @id @default(uuid()) @db.Uuid
   userId       Int
   status       AdSessionStatus @default(PENDING)
-  slot         Int             @default(0) // Vazifalardagi reklama kartasi raqami (0..AD_SLOTS-1): cooldown har karta uchun alohida
+  slot         Int             @default(0) // ESKI maydon (5 ta AdsGram karta davridan qolgan). Endi ishlatilmaydi — provider + placement ishlatiladi
+  // Reklama provayderi: 'adsgram' | 'monetag' | 'onclicka'. Har bir sessiya aynan bitta provayderga bog'langan.
+  provider     String          @default("adsgram")
+  // Reklama joyi: 'task' (Vazifalar kartasi) | 'quick' (tepada doim turadigan +1 olmos; faqat adsgram). Cooldown (provider, placement) bo'yicha alohida.
+  placement    String          @default("task")
   createdAt    DateTime        @default(now())
   expiresAt    DateTime
   claimedAt    DateTime?
@@ -125,20 +129,36 @@ model AdSession {
 
   @@index([userId, status])
   @@index([status, expiresAt])
+  @@index([userId, provider, placement, status])
 }
 
-// AdsGram Reward URL (server-to-server GET) orqali kelgan tasdiqlar.
-// AdsGram hujjatida faqat telegramId yuboriladi (reward ID / imzo yo'q), shuning uchun
-// har bir tasdiq bitta sessiyaga ko'pi bilan bir marta bog'lanadi.
+// Server-to-server tasdiqlar: AdsGram Reward URL va OnClickA "confirm view" GET so'rovi.
+// Ikkala provayder ham faqat telegramId yuboradi (reward ID / imzo yo'q), shuning uchun
+// har bir tasdiq bitta sessiyaga ko'pi bilan bir marta bog'lanadi. provider/placement tasdiq qaysi
+// provayder/joydan kelganini bildiradi — boshqa provayder sessiyasiga hech qachon bog'lanmaydi.
+// (Monetag bu jadvalni ishlatmaydi: postback ymid = sessiya ID ni o'zi olib keladi.)
 model AdsgramConfirmation {
   id         BigInt   @id @default(autoincrement())
   telegramId BigInt
+  provider   String   @default("adsgram")
+  placement  String   @default("task")
   receivedAt DateTime @default(now())
   sessionId  String?  @unique @db.Uuid
 
   session AdSession? @relation(fields: [sessionId], references: [id], onDelete: Restrict)
 
   @@index([telegramId, receivedAt])
+  @@index([telegramId, provider, placement, receivedAt], map: "AdsgramConfirmation_tg_prov_plc_recv_idx")
+}
+
+// Reklama provayderlari sozlamalari (admin paneldan o'zgaradi). Faqat OMMAVIY identifikatorlar:
+// AdsGram block ID, Monetag zone ID / SDK URL, OnClickA spot ID / SDK URL. MAXFIY tokenlar bu yerda emas — .env da.
+// Qator yo'q = .env dagi standart qiymat; qator bor (bo'sh ham) = shu qiymat ishlatiladi.
+model AdSetting {
+  key       String   @id
+  value     String   @default("")
+  updatedAt DateTime @updatedAt
+  updatedBy BigInt?
 }
 
 // Ledger: har bir balans o'zgarishi shu yerda (amount: + kirim, - chiqim; currency: qaysi balans). Faqat qo'shiladi.

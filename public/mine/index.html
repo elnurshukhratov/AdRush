@@ -28,7 +28,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" />
-  <link rel="stylesheet" href="mine.css?v=15" />
+  <link rel="stylesheet" href="mine.css?v=16" />
   <link rel="stylesheet" href="liquid-glass.css?v=6" />
   <script src="https://sad.adsgram.ai/js/sad.min.js" defer></script>
   <style id="home-css">
@@ -225,16 +225,49 @@
         <div class="card stat"><span class="muted" data-i18n="home.coins">🪙 Rush Coin</span><b id="tasksCoins">0</b></div>
       </div>
 
-      <div class="card task ad-slot" id="taskAd">
+      <div class="card task ad-slot" data-provider="adsgram" data-placement="task">
         <div class="task-head">
-          <div><b><span data-i18n="tasks.ad_title">📺 Rewarded reklama</span> <span class="slot-n" hidden>#1</span></b><span class="muted" data-i18n="tasks.ad_hint">Reklamani oxirigacha ko‘ring — server tasdiqlagach olmos beriladi.</span></div>
-          <span class="chip-sm" id="adReward">+1 💎</span>
+          <div class="prov">
+            <span class="prov-logo" aria-hidden="true">A</span>
+            <div><b>AdsGram</b><span class="muted" data-i18n="tasks.ad_hint">Reklamani oxirigacha ko‘ring — server tasdiqlagach olmos beriladi.</span></div>
+          </div>
+          <span class="chip-sm">+1 💎</span>
         </div>
         <div class="cta-wrap">
-          <button id="watch" class="cta" type="button" disabled><span id="watchLabel" data-i18n="watch.loading">Yuklanmoqda…</span></button>
-          <span class="plus" id="plusOne" aria-hidden="true">+1 💎</span>
+          <button class="cta" type="button" disabled><span data-i18n="watch.loading">Yuklanmoqda…</span></button>
+          <span class="plus" aria-hidden="true">+1 💎</span>
         </div>
-        <p id="msg" class="msg center" role="status" aria-live="polite"></p>
+        <p class="msg center" role="status" aria-live="polite"></p>
+      </div>
+
+      <div class="card task ad-slot" data-provider="monetag" data-placement="task">
+        <div class="task-head">
+          <div class="prov">
+            <span class="prov-logo" aria-hidden="true">M</span>
+            <div><b>Monetag</b></div>
+          </div>
+          <span class="chip-sm">+1 💎</span>
+        </div>
+        <div class="cta-wrap">
+          <button class="cta" type="button" disabled><span data-i18n="watch.loading">Yuklanmoqda…</span></button>
+          <span class="plus" aria-hidden="true">+1 💎</span>
+        </div>
+        <p class="msg center" role="status" aria-live="polite"></p>
+      </div>
+
+      <div class="card task ad-slot" data-provider="onclicka" data-placement="task">
+        <div class="task-head">
+          <div class="prov">
+            <span class="prov-logo" aria-hidden="true">O</span>
+            <div><b>OnClickA</b></div>
+          </div>
+          <span class="chip-sm">+1 💎</span>
+        </div>
+        <div class="cta-wrap">
+          <button class="cta" type="button" disabled><span data-i18n="watch.loading">Yuklanmoqda…</span></button>
+          <span class="plus" aria-hidden="true">+1 💎</span>
+        </div>
+        <p class="msg center" role="status" aria-live="polite"></p>
       </div>
 
       <div class="card task" id="taskRef">
@@ -354,8 +387,8 @@
     <button type="button" class="tab" data-go="profile"><i><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></i><span data-i18n="nav.profile">Profil</span></button>
   </nav>
 
-  <script src="i18n.js?v=11"></script>
-  <script src="mine.js?v=21"></script>
+  <script src="i18n.js?v=12"></script>
+  <script src="mine.js?v=22"></script>
   <script src="liquid-glass.js?v=6"></script>
   <script>
     /* Splash: ilova tayyor bo'lguncha (kamida 1.6s, ko'pi bilan 9s) bot animatsiyasi ko'rsatiladi */

@@ -572,3 +572,14 @@ h1, h2, .brand, .stat b, .coin-bal, .tile b, .sheet h3, .pname {font-family: var
 #view-tasks .ad-slot .cta.busy > span::after { content: ""; display: inline-block; width: 12px; height: 12px; margin-left: 8px; vertical-align: -2px; border: 2px solid rgba(255,255,255,.35); border-top-color: #fff; border-radius: 50%; animation: spin .7s linear infinite; }
 #view-tasks .ad-slot .msg { grid-area: msg; margin: 8px 0 0; min-height: 0; font-size: 12.5px; }
 #view-tasks .ad-slot .msg:empty { display: none; }
+
+/* ===== Provayder nishoni: AdsGram / Monetag / OnClickA (bir xil standart, o'z rangi bilan) ===== */
+#view-tasks .ad-slot[data-provider="adsgram"] { --pa: #64D2FF; --pb: #0A84FF; }
+#view-tasks .ad-slot[data-provider="monetag"] { --pa: #D58BFF; --pb: #7D3CFF; }
+#view-tasks .ad-slot[data-provider="onclicka"] { --pa: #FFC15A; --pb: #FF6A3D; }
+#view-tasks .ad-slot::before { background: linear-gradient(180deg, var(--pa, #64D2FF), var(--pb, var(--primary))); }
+#view-tasks .ad-slot .task-head > .prov { flex-direction: row; align-items: center; gap: 10px; }
+#view-tasks .ad-slot .prov > div { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.prov-logo { flex: none; width: 36px; height: 36px; border-radius: 12px; display: grid; place-items: center; font-size: 17px; font-weight: 800; color: #fff; background: linear-gradient(135deg, var(--pa, #64D2FF), var(--pb, #0A84FF)); box-shadow: inset 0 0 0 .5px rgba(255,255,255,.55), 0 4px 12px -6px var(--pb, #0A84FF); }
+#view-tasks .ad-slot.off { opacity: .62; }
+#view-tasks .ad-slot.off .cta { filter: grayscale(.6); }
