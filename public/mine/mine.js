@@ -29,7 +29,6 @@
     });
   }
   const $ = (id) => document.getElementById(id);
-  const MEDALS = { 1: '🥇', 2: '🥈', 3: '🥉' };
   // ---------- i18n ----------
   // Matnlar AdRushI18n lug'atida (public/mine/i18n.js). Statik HTML: data-i18n; dinamik: tt()/tx().
   const i18n = window.AdRushI18n || { t: (k) => k, has: () => false, apply() {}, setLang() { return false; }, lang: 'uz', locale: 'uz-UZ' };
@@ -60,13 +59,12 @@
   const reasonKey = (reason, fallback) => (reason && i18n.has('reason.' + reason) ? 'reason.' + reason : fallback);
 
   const state = {
-    view: 'home', refreshSec: 15, startAt: null, endAt: null, countTo: null, busy: false, busyLabel: '',
-    coolUntil: 0, cooldownMs: 0, noAdUntil: 0, adControllers: {}, blockId: null, quickBlockId: null, pollId: null, ticks: 0,
-    me: null, prizes: [], loaded: false, metaOk: false, boardOk: false, competition: null, isAdmin: false,
-    histLoaded: 0, metaReloadAt: 0, backFn: null, gated: false, gateKind: null, subChannel: null, subBusy: false, prizesAnimated: false, lbSig: '', champs: [], selId: null,
-    participants: 0, lbData: null, histList: [], coinItems: [], chOk: false,
-    // Rush Coin: hammasi serverdan keladi (faqat ko'rsatish uchun saqlanadi)
-    tgId: '', coins: 0, adReward: 5, referralReward: 20, lossPct: 30, minBet: 1, maxBet: 1000000, activeBets: 0, maxBets: 5,
+    view: 'home', refreshSec: 15, busy: false, busyLabel: '',
+    coolUntil: 0, cooldownMs: 10000, noAdUntil: 0, blockId: null, pollId: null,
+    loaded: false, statsOk: false, isAdmin: false, backFn: null, gated: false, gateKind: null, subChannel: null, subBusy: false,
+    coinItems: [], shopItems: [],
+    // Olmos / Rush Coin: hammasi serverdan keladi (faqat ko'rsatish uchun saqlanadi)
+    tgId: '', diamonds: 0, coins: 0, adsWatched: 0, diamondPerAd: 1, diamondToRush: 12, referralDiamondReward: 5,
   };
 
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -133,9 +131,7 @@
     return n;
   }
   /** Xabar kalit bilan beriladi (til o'zgarsa o'zi tarjima bo'ladi); kalit bo'sh bo'lsa tozalanadi. */
-  let quickMode = false; // tepadagi tezkor tugma: xabarlar toast bilan ko'rsatiladi (#msg faqat Vazifalar sahifasida)
   function say(key, kind, vars) {
-    if (quickMode) { if (key) toast(tt(key, vars), kind === 'bad'); return; }
     const m = $('msg');
     if (key) tx(m, key, vars); else plain(m, '');
     m.className = 'msg center' + (kind ? ' ' + kind : '');
@@ -181,20 +177,7 @@
     for (let i = 0; i < n; i += 1) g.appendChild(el('div', 'sk sk-row' + (cls ? ' ' + cls : '')));
     return g;
   }
-  function placeLabel(p) { return MEDALS[p] || p + '.'; }
   function who(r) { return r.username ? '@' + r.username : (r.firstName || tt('common.user')); }
-  function prizeThumb(p, cls) {
-    const box = el('div', 'thumb' + (cls ? ' ' + cls : ''));
-    if (p.imageUrl && /^\/uploads\/prizes\//.test(p.imageUrl)) {
-      const img = document.createElement('img');
-      img.alt = ''; img.loading = 'lazy'; img.decoding = 'async'; img.src = p.imageUrl;
-      img.onerror = () => box.replaceChildren(document.createTextNode(placeLabel(p.place)));
-      box.appendChild(img);
-    } else {
-      box.textContent = placeLabel(p.place);
-    }
-    return box;
-  }
   /** Raqam animatsiyasi (faqat ko'rsatish; qiymat doim serverdan keladi). */
   function setNum(node, value, bump) {
     const to = Number(value) || 0;
@@ -212,15 +195,24 @@
     if (bump && to > from) { node.classList.remove('bump'); void node.offsetWidth; node.classList.add('bump'); }
   }
 
-  /** Balans ham kartada, ham doim ko'rinib turadigan yuqori panelda yangilanadi (qiymat faqat serverdan). */
-  function setCoinBal(value, bump) {
-    setNum($('coinBal'), value, bump);
-    setNum($('topCoins'), value, false);
-    setNum($('rushBal'), value, false);
-    setNum($('sendBal'), value, false);
-    const chip = $('topCoinChip');
-    if (bump && chip && !reduceMotion) { chip.classList.remove('bump'); void chip.offsetWidth; chip.classList.add('bump'); }
+  /** Balanslar barcha joyda (yuqori panel, Home, Vazifalar, Profil) bir vaqtda yangilanadi. Qiymat faqat serverdan. */
+  function setBalances(d, bump) {
+    if (!d) return;
+    if (Number.isInteger(d.diamonds)) {
+      state.diamonds = d.diamonds;
+      ['topDiamonds', 'homeDiamonds', 'tasksDiamonds', 'pDiamonds'].forEach((id) => { const n = $(id); if (n) setNum(n, d.diamonds, bump && id === 'tasksDiamonds'); });
+      const chip = $('topDiamondChip');
+      if (bump && chip && !reduceMotion) { chip.classList.remove('bump'); void chip.offsetWidth; chip.classList.add('bump'); }
+    }
+    if (Number.isInteger(d.rushCoins)) {
+      state.coins = d.rushCoins;
+      ['topCoins', 'homeCoins', 'tasksCoins', 'pCoins', 'sendBal'].forEach((id) => { const n = $(id); if (n) setNum(n, d.rushCoins, false); });
+      const chip = $('topCoinChip');
+      if (bump && chip && !reduceMotion) { chip.classList.remove('bump'); void chip.offsetWidth; chip.classList.add('bump'); }
+    }
   }
+  /** Faqat Rush Coin yangilanadigan joylar (tanga yuborish) uchun qisqa yo'l. */
+  function setCoinBal(value, bump) { setBalances({ rushCoins: value }, bump); }
 
   // ---------- Tema: Kun / Tun ----------
   // Ranglar CSS tokenlari bilan bir xil (mine.css). Telegram sarlavhasi va fon rangi temaga qarab yangilanadi.
@@ -292,7 +284,6 @@
   function enterView(view) {
     const v = document.getElementById('view-' + view);
     if (!v || reduceMotion) return;
-    if (view === 'leaderboard') playLbEnter();
     Array.from(v.children).forEach((c, i) => c.style.setProperty('--i', String(Math.min(i, 8))));
     v.classList.remove('stag');
     void v.offsetWidth;
@@ -301,16 +292,6 @@
     v._stagT = setTimeout(() => v.classList.remove('stag'), 900);
   }
 
-  /** Reyting: podium pastdan ko'tariladi, qatorlar o'ngdan suriladi, "Mening qatorim" to'lqin bilan ajraladi. */
-  function playLbEnter() {
-    const v = $('view-leaderboard');
-    if (!v || reduceMotion) return;
-    v.classList.remove('lb-enter');
-    void v.offsetWidth;
-    v.classList.add('lb-enter');
-    clearTimeout(v._lbT);
-    v._lbT = setTimeout(() => v.classList.remove('lb-enter'), 1600);
-  }
 
   /** Tugmadan 6-8 ta tanga/uchqun sachraydi. */
   function burstSparks() {
@@ -327,59 +308,6 @@
       wrap.appendChild(sp);
       setTimeout(() => sp.remove(), 1000);
     }
-  }
-
-  /** Top 3 ga kirganda bir marta konfetti (1.5 s). */
-  function confetti() {
-    haptic('success');
-    if (reduceMotion) return;
-    const box = el('div', 'confetti');
-    box.setAttribute('aria-hidden', 'true');
-    const colors = ['#4B50E6', '#7A5CF6', '#C2417F', '#FF8C32', '#FFC83A', '#3DDC84'];
-    for (let i = 0; i < 36; i += 1) {
-      const c = document.createElement('i');
-      c.style.left = Math.round(Math.random() * 100) + '%';
-      c.style.setProperty('--c', colors[i % colors.length]);
-      c.style.setProperty('--d', (Math.random() * 0.3).toFixed(2) + 's');
-      c.style.setProperty('--x', Math.round(Math.random() * 240 - 120) + 'px');
-      c.style.setProperty('--rot', Math.round(Math.random() * 720 - 360) + 'deg');
-      box.appendChild(c);
-    }
-    document.body.appendChild(box);
-    setTimeout(() => box.remove(), 1800);
-  }
-
-  /** O'rin o'zgarishi: ▲ yashil yoki ▼ qizil belgi chiqib, 2 s dan keyin so'nadi. */
-  let deltaTimer = null;
-  function showRankDelta(prevRank, newRank) {
-    if (prevRank === newRank || !newRank) return;
-    const node = $('homeRankDelta');
-    if (!node) return;
-    let txt;
-    let cls;
-    if (prevRank) {
-      const d = prevRank - newRank;
-      cls = d > 0 ? 'up' : 'down';
-      txt = (d > 0 ? '▲ ' : '▼ ') + Math.abs(d);
-    } else {
-      cls = 'up';
-      txt = '▲';
-    }
-    node.textContent = txt;
-    node.className = 'rdelta ' + cls;
-    void node.offsetWidth;
-    node.classList.add('show');
-    clearTimeout(deltaTimer);
-    deltaTimer = setTimeout(() => node.classList.remove('show'), 2000);
-    if (newRank <= 3 && (!prevRank || prevRank > 3)) confetti();
-  }
-
-  function flashBar() {
-    const f = $('homeBarFill');
-    if (!f || reduceMotion) return;
-    f.classList.remove('flash');
-    void f.offsetWidth;
-    f.classList.add('flash');
   }
 
   // ---------- Telegram muhiti ----------
@@ -551,10 +479,9 @@
     const changed = state.view !== view;
     state.view = view;
     if (view !== 'admin') state.backFn = null;
-    if (view === 'champ') state.backFn = () => go('rewards');
     if (view === 'send') state.backFn = () => go('profile'); // Tanga yuborish — Profilning ichki sahifasi
     document.querySelectorAll('.view').forEach((v) => { v.hidden = v.dataset.view !== view; });
-    const tabView = view === 'champ' ? 'rewards' : view === 'send' ? 'profile' : view; // chempionat sahifasi "Chempionatlar", yuborish sahifasi "Profil" bo'limining ichki sahifasi
+    const tabView = view === 'send' ? 'profile' : view; // yuborish sahifasi "Profil" bo'limining ichki sahifasi
     document.querySelectorAll('.tab').forEach((t) => {
       const on = t.dataset.go === tabView;
       t.classList.toggle('active', on);
@@ -566,58 +493,25 @@
     if (changed) { haptic('light'); enterView(view); }
     if (view === 'tasks') updateWatchState();
     if (view === 'send') enterSend();
-    if (view === 'profile') { loadReferrals().catch(() => {}); loadCoinHistory(false).catch(() => {}); }
-    if (view === 'rewards') { if (champ.tab === 'history') loadChampHistory().catch(() => {}); }
+    if (view === 'profile') { loadOrders(false, false).catch(() => {}); loadReferrals().catch(() => {}); loadCoinHistory(false).catch(() => {}); }
+    if (view === 'shop') loadShop().catch(() => {});
     if (state.loaded && view !== 'admin') refresh().catch(() => {});
     if (view === 'admin' && window.AdRushAdmin) window.AdRushAdmin.onShow();
   }
 
-  // ---------- Taymer / tugma holati ----------
-  const pad = (n) => String(n).padStart(2, '0');
-  function renderTimer() {
-    if (!state.countTo) return;
-    const left = Math.max(0, Math.floor((state.countTo - Date.now()) / 1000));
-    setRoll($('cdD'), String(Math.floor(left / 86400)), false);
-    setRoll($('cdH'), pad(Math.floor((left % 86400) / 3600)), false);
-    setRoll($('cdM'), pad(Math.floor((left % 3600) / 60)), true);
-    setRoll($('cdS'), pad(left % 60), true);
-  }
-  function setRoll(node, txt, anim) {
-    if (node.textContent === txt) return;
-    const first = node.textContent === '--';
-    node.textContent = txt;
-    if (anim && !first && !reduceMotion) { node.classList.remove('roll'); void node.offsetWidth; node.classList.add('roll'); }
-  }
-
-  // Boshlanmagan bo'lsa boshlanishigacha, aks holda tugashigacha sanaydi (faqat ko'rsatish; qaror serverda)
-  function updateCountTarget() {
-    const upcoming = state.startAt && Date.now() < state.startAt;
-    state.countTo = upcoming ? state.startAt : state.endAt;
-    tx($('cdCaption'), upcoming ? 'cd.until_start' : 'cd.until_end');
-  }
-
-  function isLive() {
-    return Boolean(state.competition) && state.startAt <= Date.now() && Date.now() < state.endAt;
-  }
-
+  // ---------- Reklama tugmasi holati ----------
   function updateWatchState() {
-    const live = isLive();
     const cd = Math.max(0, Math.ceil((state.coolUntil - Date.now()) / 1000));
     const noAd = Math.max(0, Math.ceil((state.noAdUntil - Date.now()) / 1000)); // AdsGram reklama bermadi -> tugma vaqtincha o'chiq
     const btn = $('watch');
-    btn.disabled = state.busy || !state.loaded || cd > 0 || noAd > 0; // reklama Rush Coin beradi: faol chempionat shart emas
+    btn.disabled = state.busy || !state.loaded || cd > 0 || noAd > 0;
     btn.classList.toggle('busy', state.busy);
-    const qa = $('quickAd');
-    if (qa) { qa.disabled = btn.disabled; qa.classList.toggle('busy', state.busy); }
-
     if (state.busy) tx($('watchLabel'), state.busyLabel || 'watch.loading');
     else if (!state.loaded) tx($('watchLabel'), 'watch.loading');
     else if (cd > 0) tx($('watchLabel'), 'watch.cooldown', { n: cd });
     else if (noAd > 0) tx($('watchLabel'), 'watch.no_ad', { n: noAd });
-    else tx($('watchLabel'), 'watch.label', { n: state.adReward });
-    $('livePill').hidden = !live;
-    $('lbLive').hidden = !live;
-    updateBetState();
+    else tx($('watchLabel'), 'watch.label', { n: state.diamondPerAd });
+    updateConvertState();
   }
 
   /** AdsGram reklama bermasa (no fill / SDK yo'q) tugmalarni NO_AD_RETRY_MS ga o'chirib qo'yadi, keyin o'zi qayta yoqiladi. */
@@ -632,429 +526,23 @@
     updateWatchState();
   }
 
-  // ---------- Render ----------
-  function renderCompetition(c, participants) {
-    state.competition = c || null;
-    state.participants = participants || 0;
-    $('heroSk').hidden = true;
-    $('heroBody').hidden = false;
-    const none = !c;
-    $('noComp').hidden = !none;
-    $('countdown').hidden = none;
-    $('cdCaption').hidden = none;
-    $('progressCard').hidden = none;
-    $('joinRow').hidden = none;
-    $('compDesc').hidden = none || !c.description;
-    $('pComp').hidden = none;
-    if (none) {
-      tx($('period'), 'period.waiting');
-      tx($('compTitle'), 'home.comp_default');
-      $('lbPeriod').textContent = '';
-      plain($('participants'), '');
-      plain($('pCompEnds'), '');
-      state.countTo = null; state.startAt = null; state.endAt = null;
-      updateWatchState();
-      return;
-    }
-    plain($('period'), c.title); // chempionat nomi admin kiritgan tilda qoladi
-    plain($('compTitle'), c.title);
-    $('compDesc').textContent = c.description || '';
-    $('lbPeriod').textContent = c.title;
-    $('pCompTitle').textContent = c.title;
-    if (participants) tx($('participants'), 'home.participants', { n: nf.format(participants) }); else plain($('participants'), '');
-    state.startAt = new Date(c.startAt).getTime();
-    state.endAt = new Date(c.endAt).getTime();
-    plain($('pCompEnds'), tt('profile.ends', { date: new Date(c.endAt).toLocaleString(i18n.locale, DATE_FMT) }));
-    updateCountTarget();
-    renderTimer();
-    updateWatchState();
-  }
 
-  // ---------- Chempionatlar (bir vaqtda bir nechta faol) ----------
-  // Faqat ko'rsatish: reyting, tikish va sovrin hisob-kitobi serverda; klient faqat qaysi chempionat tanlanganini yuboradi.
-  function selectedChamp() { return state.champs.find((c) => c.id === state.selId) || null; }
 
-  function champPrizeLine(c) {
-    const p = c.firstPrize;
-    if (!p) return tt('champs.prize_soon');
-    return tt('champs.first_prize') + ': ' + p.title + (p.value ? ' • ' + p.value : '');
-  }
 
-  // Qolgan vaqt: "2 kun 3 soat" / "5 soat 12 daq" / "7 daq 30 s" (faqat ko'rsatish; qaror serverda)
-  function fmtDur(sec) {
-    sec = Math.max(0, Math.floor(sec));
-    const d = Math.floor(sec / 86400), h = Math.floor((sec % 86400) / 3600), m = Math.floor((sec % 3600) / 60), r = sec % 60;
-    if (d > 0) return tt('dur.d', { n: d }) + ' ' + tt('dur.h', { n: h });
-    if (h > 0) return tt('dur.h', { n: h }) + ' ' + tt('dur.m', { n: m });
-    if (m > 0) return tt('dur.m', { n: m }) + ' ' + tt('dur.s', { n: r });
-    return tt('dur.s', { n: r });
-  }
 
-  /** Karta ichidagi holat qatori: [Boshlanmagan | Davom etmoqda] + "Boshlanishiga / Tugashiga: ..." — har soniya yangilanadi. */
-  function statusRow(c) {
-    const row = el('div', 'cc-status');
-    row.dataset.start = String(new Date(c.startAt).getTime());
-    row.dataset.end = String(new Date(c.endAt).getTime());
-    row.append(el('span', 'cc-badge'), el('span', 'cc-time'));
-    paintStatus(row);
-    return row;
-  }
 
-  function paintStatus(row) {
-    const st = Number(row.dataset.start), en = Number(row.dataset.end), now = Date.now();
-    const upcoming = now < st;
-    const badge = row.firstChild, time = row.lastChild;
-    badge.className = 'cc-badge ' + (upcoming ? 'upcoming' : 'live');
-    tx(badge, upcoming ? 'champs.st_upcoming' : 'champs.st_live');
-    plain(time, tt(upcoming ? 'champs.left_start' : 'champs.left_end', { t: fmtDur(((upcoming ? st : en) - now) / 1000) }));
-  }
 
-  function champCard(c, full) {
-    const sel = c.id === state.selId;
-    const upcoming = new Date(c.startAt).getTime() > Date.now();
-    const card = el('div', 'card prize champ' + (sel ? ' sel' : ''));
-    card.setAttribute('role', 'button');
-    card.tabIndex = 0;
 
-    const body = el('div', 'pbody');
-    body.append(el('div', 'pt', c.title), el('div', 'ps', champPrizeLine(c)), statusRow(c));
-    if (full) {
-      const when = upcoming ? tt('champs.starts', { date: new Date(c.startAt).toLocaleString(i18n.locale, DATE_FMT) })
-        : tt('champs.ends', { date: new Date(c.endAt).toLocaleString(i18n.locale, DATE_FMT) });
-      body.appendChild(el('div', 'pm', when + (c.participants ? ' • ' + tt('home.participants', { n: nf.format(c.participants) }) : '')));
-      if (c.description) body.appendChild(el('div', 'pd', c.description));
-    }
-    if (c.my && c.my.rank) body.appendChild(el('div', 'youtag', tt('champs.my', { rank: c.my.rank, n: nf.format(c.my.validAds) })));
 
-    card.append(c.firstPrize ? prizeThumb(c.firstPrize, 'lg') : el('div', 'thumb lg', '🏆'), body, el('span', 'cc-go', '›'));
 
-    // Kartani bosish: chempionat sahifasi ochiladi (tikish va tikkanlar shu yerda)
-    const open = () => openChamp(c.id);
-    card.addEventListener('click', open);
-    card.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); } });
-    return card;
-  }
 
-  // ---------- Chempionat sahifasi: holat, taymer, tikish, tikkanlar ----------
-  function openChamp(id) {
-    if (state.gated || !state.champs.some((c) => c.id === id)) return;
-    if (state.selId !== id) { haptic('select'); selectChamp(id); }
-    go('champ');
-    renderChampDetail();
-  }
 
-  function renderChampDetail() {
-    const c = selectedChamp();
-    if (!c || !$('chTitle')) return;
-    plain($('chTitle'), c.title);
-    const d = $('chDesc');
-    d.textContent = c.description || '';
-    d.hidden = !c.description;
-    plain($('chPrize'), champPrizeLine(c) + (c.participants ? ' • ' + tt('home.participants', { n: nf.format(c.participants) }) : ''));
-    const upcoming = new Date(c.startAt).getTime() > Date.now();
-    plain($('chDates'), tt(upcoming ? 'champs.starts' : 'champs.ends', { date: new Date(upcoming ? c.startAt : c.endAt).toLocaleString(i18n.locale, DATE_FMT) }));
-    $('chCount').textContent = nf.format(c.participants || 0);
-    tickChampDetail();
-  }
 
-  function tickChampDetail() {
-    const c = selectedChamp();
-    if (!c || !$('chD')) return;
-    const st = new Date(c.startAt).getTime(), en = new Date(c.endAt).getTime(), now = Date.now();
-    const upcoming = now < st;
-    const left = Math.max(0, Math.floor(((upcoming ? st : en) - now) / 1000));
-    tx($('chCap'), upcoming ? 'cd.until_start' : 'cd.until_end');
-    setRoll($('chD'), String(Math.floor(left / 86400)), false);
-    setRoll($('chH'), pad(Math.floor((left % 86400) / 3600)), false);
-    setRoll($('chM'), pad(Math.floor((left % 3600) / 60)), true);
-    setRoll($('chS'), pad(left % 60), true);
-    const badge = $('chBadge');
-    badge.hidden = !upcoming;
-    if (upcoming) { badge.className = 'cc-badge upcoming'; tx(badge, 'champs.st_upcoming'); }
-    $('chLive').hidden = upcoming || now >= en;
-  }
 
-  function tickChamps() {
-    document.querySelectorAll('.cc-status').forEach(paintStatus);
-    if (state.view === 'champ') tickChampDetail();
-  }
 
-  /** Shu chempionatga tikkanlar: tartib — tikilgan Rush Coin miqdori (server hisoblaydi, klient faqat ko'rsatadi). */
-  function renderChampBoard(list, me) {
-    const box = $('chBoard');
-    if (!box) return;
-    state.chOk = true;
-    box.replaceChildren();
-    if (!list.length) {
-      box.appendChild(stateNode('🏁', 'ch.empty', 'ch.empty_hint'));
-    } else {
-      const wrap = el('div');
-      for (const r of list) {
-        const row = el('div', 'row' + (r.isMe ? ' mine' : ''));
-        row.append(
-          el('span', 'rk', MEDALS[r.rank] || '#' + r.rank),
-          el('span', 'name', who(r) + (r.isMe ? ' ' + tt('common.you_paren') : '')),
-          el('span', 'val', '🪙 ' + nf.format(r.validAds)),
-        );
-        wrap.appendChild(row);
-      }
-      box.appendChild(wrap);
-    }
-    const meCard = $('chMe');
-    if (me && me.rank && !list.some((r) => r.isMe)) {
-      meCard.hidden = false;
-      meCard.replaceChildren();
-      const row = el('div', 'row mine');
-      row.append(el('span', 'rk', '#' + nf.format(me.rank)), ti('span', 'name', 'common.you'), el('span', 'val', '🪙 ' + nf.format(me.validAds)));
-      meCard.appendChild(row);
-    } else {
-      meCard.hidden = true;
-    }
-  }
 
-  function renderChampBoardError() {
-    if (state.chOk || !$('chBoard')) return;
-    $('chBoard').replaceChildren(stateNode('📡', 'lb.fail', 'err.check_network', 'common.retry', () => {
-      $('chBoard').replaceChildren(skeleton(3));
-      refresh().catch(() => {});
-    }));
-  }
 
-  function renderLbChamps() {
-    const box = $('lbChamps');
-    if (!box) return;
-    box.replaceChildren();
-    box.hidden = state.champs.length < 2;
-    for (const c of state.champs) {
-      const b = el('button', 'lbchip' + (c.id === state.selId ? ' on' : ''), c.title);
-      b.type = 'button';
-      b.setAttribute('role', 'tab');
-      b.setAttribute('aria-selected', c.id === state.selId ? 'true' : 'false');
-      b.addEventListener('click', () => { if (c.id !== state.selId) { haptic('select'); selectChamp(c.id); } });
-      box.appendChild(b);
-    }
-  }
 
-  function renderChamps() {
-    const animate = !state.prizesAnimated;
-    state.prizesAnimated = true;
-    const home = $('homeChamps');
-    const box = $('champList');
-    home.replaceChildren();
-    box.replaceChildren();
-
-    if (!state.champs.length) {
-      home.appendChild(stateNode('🏆', 'champs.none'));
-      const c = el('div', 'card');
-      c.appendChild(stateNode('🏆', 'champs.none', 'champs.none_hint'));
-      box.appendChild(c);
-      renderLbChamps();
-      return;
-    }
-    const hw = el('div', animate ? 'stagger' : '');
-    const bw = el('div', animate ? 'stagger' : '');
-    for (const c of state.champs) { hw.appendChild(champCard(c, false)); bw.appendChild(champCard(c, true)); }
-    home.appendChild(hw);
-    box.appendChild(bw);
-    renderLbChamps();
-  }
-
-  /** Server ro'yxatini qabul qiladi; tanlangan chempionat tugagan/yo'qolgan bo'lsa birinchisiga o'tadi. */
-  function applyChamps(list) {
-    const prevSel = state.selId;
-    state.champs = Array.isArray(list) ? list : [];
-    if (!state.champs.some((c) => c.id === state.selId)) state.selId = state.champs.length ? state.champs[0].id : null;
-    const c = selectedChamp();
-    renderCompetition(c, c ? c.participants : 0);
-    renderChamps();
-    // Ko'rilayotgan chempionat tugab ketgan bo'lsa (tanlov boshqasiga o'tdi) ro'yxatga qaytamiz
-    if (state.view === 'champ' && (!state.champs.length || state.selId !== prevSel)) { go('rewards'); return; }
-    renderChampDetail();
-  }
-
-  /** Foydalanuvchi boshqa chempionatni tanladi: hero, reyting, o'z natijam va tikish shu chempionatga o'tadi. */
-  function selectChamp(id) {
-    if (state.selId === id || !state.champs.some((c) => c.id === id)) return;
-    state.selId = id;
-    state.me = null; // o'rin o'zgarishi animatsiyasi boshqa chempionat bilan solishtirilmasin
-    state.lbSig = '';
-    state.boardOk = false;
-    state.activeBets = 0;
-    state.chOk = false;
-    if ($('chBoard')) { $('chBoard').replaceChildren(skeleton(3)); $('chMe').hidden = true; }
-    const c = selectedChamp();
-    renderCompetition(c, c ? c.participants : 0);
-    renderChamps();
-    renderChampDetail();
-    updateBetState();
-    refresh().catch(() => {});
-  }
-
-  async function loadHistory() {
-    if (Date.now() - state.histLoaded < 30000) return;
-    const res = await api('GET', '/api/competition/history?limit=5');
-    if (!ok(res)) return;
-    state.histLoaded = Date.now();
-    state.histList = res.data.competitions.filter((c) => c.winners.length);
-    renderHistory();
-  }
-
-  function renderHistory() {
-    const box = $('history');
-    if (!box) return; // takroriy blok olib tashlangan: to'liq tarix "Tarix" tabida
-    box.replaceChildren();
-    const list = state.histList;
-    if ($('histHead')) $('histHead').hidden = !list.length;
-    for (const c of list) {
-      const card = el('div', 'card hist');
-      card.appendChild(el('div', 'hist-title', c.title));
-      for (const w of c.winners) {
-        const row = el('div', 'row');
-        row.append(el('span', 'rk', placeLabel(w.place)), el('span', 'name', who(w)), el('span', 'val', w.prize));
-        card.appendChild(row);
-      }
-      box.appendChild(card);
-    }
-  }
-
-  function crownNode() {
-    const NS = 'http://www.w3.org/2000/svg';
-    const box = el('div', 'crown');
-    const svg = document.createElementNS(NS, 'svg');
-    svg.setAttribute('viewBox', '0 0 24 20');
-    svg.setAttribute('aria-hidden', 'true');
-    const path = document.createElementNS(NS, 'path');
-    path.setAttribute('d', 'M3 17 2 6l5.5 4.5L12 3l4.5 7.5L22 6l-1 11Z');
-    svg.appendChild(path);
-    box.appendChild(svg);
-    return box;
-  }
-
-  function podiumSlot(r, place) {
-    const s = el('div', 'pod p' + place + (r && r.isMe ? ' mine' : '') + (r ? '' : ' empty'));
-    if (place === 1 && r) s.appendChild(crownNode());
-    s.append(el('div', 'medal', MEDALS[place]), el('div', 'pn', r ? who(r) + (r.isMe ? ' ' + tt('common.you_paren') : '') : '—'), el('div', 'pa', r ? nf.format(r.validAds) : ''));
-    return s;
-  }
-
-  function renderBoard(list, me, hasCompetition) {
-    state.lbData = { list, me, hasCompetition };
-    // Ma'lumot o'zgarmagan bo'lsa DOM qayta chizilmaydi (har 15 s da animatsiya takrorlanmasin)
-    const sig = JSON.stringify([list, me && me.rank, me && me.validAds, hasCompetition]);
-    if (state.boardOk && sig === state.lbSig) return;
-    state.lbSig = sig;
-    const firstShow = !state.boardOk;
-    state.boardOk = true;
-    const box = $('board');
-    const pod = $('podium');
-    box.replaceChildren();
-    pod.replaceChildren();
-
-    if (!list.length) {
-      pod.hidden = true;
-      box.hidden = false;
-      box.appendChild(hasCompetition
-        ? stateNode('🏁', 'lb.empty', 'lb.empty_hint', 'lb.bet_btn', () => go('home'))
-        : stateNode('⏳', 'home.no_comp', 'lb.nocomp_hint'));
-    } else {
-      pod.hidden = false;
-      for (const place of [2, 1, 3]) pod.appendChild(podiumSlot(list.find((r) => r.rank === place), place));
-      const rest = list.filter((r) => r.rank > 3);
-      box.hidden = rest.length === 0;
-      const wrap = el('div');
-      rest.forEach((r, i) => {
-        const row = el('div', 'row rr' + (r.isMe ? ' mine' : ''));
-        if (i < 10) row.style.setProperty('--ri', String(i)); // faqat birinchi 10 ta qator ketma-ket chiqadi
-        row.append(el('span', 'rk', '#' + r.rank), el('span', 'name', who(r) + (r.isMe ? ' ' + tt('common.you_paren') : '')), el('span', 'val', nf.format(r.validAds)));
-        wrap.appendChild(row);
-      });
-      box.appendChild(wrap);
-    }
-
-    // Foydalanuvchi TOP ro'yxatida bo'lmasa, o'z o'rni alohida (yopishqoq) kartada
-    const meCard = $('lbMe');
-    if (me && me.rank && !list.some((r) => r.isMe)) {
-      const wasHidden = meCard.hidden;
-      meCard.hidden = false;
-      meCard.replaceChildren();
-      const row = el('div', 'row mine');
-      const rk = el('span', 'rk', '#' + nf.format(me.rank));
-      if (!wasHidden && state.meRank && state.meRank !== me.rank && !reduceMotion) rk.classList.add('roll'); // o'rin o'zgarsa raqam aylanadi
-      state.meRank = me.rank;
-      row.append(rk, ti('span', 'name', 'common.you'), el('span', 'val', nf.format(me.validAds)));
-      meCard.appendChild(row);
-      if (wasHidden && !reduceMotion) { meCard.classList.remove('in'); void meCard.offsetWidth; meCard.classList.add('in'); }
-    } else {
-      meCard.hidden = true;
-      meCard.classList.remove('in');
-      state.meRank = null;
-    }
-
-    if (firstShow && state.view === 'leaderboard') playLbEnter();
-  }
-
-  function renderBoardError() {
-    if (state.boardOk) return; // eski ro'yxat ko'rinib tursin
-    $('podium').hidden = true;
-    const box = $('board');
-    box.hidden = false;
-    box.replaceChildren(stateNode('📡', 'lb.fail', 'err.check_network', 'common.retry', () => {
-      state.lbSig = '';
-      state.boardOk = false;
-      box.replaceChildren(skeleton(5));
-      refresh().catch(() => {});
-    }));
-  }
-
-  function renderMe(me) {
-    const prev = state.me;
-    const first = !prev;
-    state.me = me;
-
-    // Rush Coin: balans va statistika faqat serverdan (frontend o'zi o'zgartirmaydi)
-    if (Number.isInteger(me.rushCoins)) {
-      state.coins = me.rushCoins;
-      setCoinBal(me.rushCoins, !first);
-      setNum($('pCoins'), me.rushCoins, false);
-    }
-    if (Number.isInteger(me.adReward)) { state.adReward = me.adReward; $('plusOne').textContent = '+' + me.adReward; }
-    if (Number.isInteger(me.adsWatched)) setNum($('pAdsWatched'), me.adsWatched, false);
-    if (Number.isInteger(me.activeBets)) state.activeBets = me.activeBets;
-    if (Number.isInteger(me.maxActiveBets)) state.maxBets = me.maxActiveBets;
-    renderCoinHint();
-    updateBetState();
-    const rank = me.rank ? '#' + nf.format(me.rank) : '—';
-
-    $('homeRank').textContent = rank;
-    setNum($('homeAds'), me.validAds, !first);
-    if (me.rank === 1) tx($('homeNext'), 'rank.first');
-    else if (me.adsToNextRank) tx($('homeNext'), 'rank.next', { n: nf.format(me.adsToNextRank) });
-    else tx($('homeNext'), 'home.join_hint');
-    $('pRank').textContent = rank;
-    setNum($('pAds'), me.validAds, false);
-    if (me.rank === 1) tx($('pNext'), 'rank.first_short');
-    else plain($('pNext'), me.adsToNextRank ? `${nf.format(me.adsToNextRank)} Rush Coin` : '—');
-
-    // Faqat ko'rsatish uchun: keyingi o'ringa qancha yaqinligi (hisob-kitob serverda)
-    let pct = 0;
-    if (me.rank === 1) pct = 100;
-    else if (me.adsToNextRank) pct = Math.round((me.validAds / (me.validAds + me.adsToNextRank)) * 100);
-    $('homeBarFill').style.width = pct + '%';
-    $('pBarFill').style.width = pct + '%';
-    $('homeBar').setAttribute('aria-valuenow', String(pct));
-
-    if (!first) {
-      if (me.validAds > prev.validAds) flashBar();
-      showRankDelta(prev.rank, me.rank);
-    }
-
-    // Kartadagi "mening o'rnim" yangilansin (faqat o'zgargan bo'lsa qayta chizamiz)
-    const sc = selectedChamp();
-    if (sc && (!sc.my || sc.my.rank !== me.rank || sc.my.validAds !== me.validAds)) {
-      sc.my = { validAds: me.validAds, rank: me.rank };
-      renderChamps();
-    }
-  }
 
   function renderProfile() {
     renderMyId();
@@ -1082,74 +570,199 @@
     $('homeError').hidden = false;
   }
 
-  async function loadMeta() {
-    state.metaReloadAt = Date.now();
-    const res = await api('GET', '/api/competition/current');
+
+
+
+  // ---------- Reklama oqimi ----------
+  // Server tasdig'i (AdsGram Reward URL) kutilayotgan bo'lsa sessiya holatini so'rab turadi
+  /** Balanslar va kurslar: faqat serverdan (/api/users/me/stats). Klient hech narsani hisoblamaydi. */
+  async function refresh() {
+    const res = await api('GET', '/api/users/me/stats');
     if (!ok(res)) {
-      if (!state.metaOk && !state.gated) {
-        $('heroSk').hidden = true;
-        $('heroBody').hidden = true;
-        $('heroCard').hidden = true;
-        $('progressCard').hidden = true;
-        showHomeError(res);
-        $('homeChamps').replaceChildren(stateNode('📡', 'prizes.load_fail'));
-        $('champList').replaceChildren(stateNode('📡', 'prizes.load_fail', 'err.check_network', 'common.retry', retryAll));
-      }
+      if (!state.statsOk && !state.gated) showHomeError(res);
       return false;
     }
-    state.metaOk = true;
+    state.statsOk = true;
     $('homeError').hidden = true;
-    $('heroCard').hidden = false;
     const d = res.data;
-    applyChamps(d.championships || []);
-    state.blockId = d.adsgram && d.adsgram.blockId;
-    state.quickBlockId = (d.adsgram && d.adsgram.quickBlockId) || null;
-    if (d.ads && d.ads.cooldownMs) state.cooldownMs = d.ads.cooldownMs;
-    if (d.rush) {
-      state.adReward = d.rush.adReward || state.adReward;
-      state.referralReward = d.rush.referralReward || state.referralReward;
-      state.lossPct = Number.isInteger(d.rush.lossRefundPercent) ? d.rush.lossRefundPercent : state.lossPct;
-      state.minBet = d.rush.minBet || state.minBet;
-      state.maxBet = d.rush.maxBet || state.maxBet;
-      state.maxBets = d.rush.maxActiveBets || state.maxBets;
-      $('plusOne').textContent = '+' + state.adReward;
-      renderCoinHint();
-    }
-    updateBetState();
+    if (Number.isInteger(d.diamondPerAd) && d.diamondPerAd > 0) state.diamondPerAd = d.diamondPerAd;
+    if (Number.isInteger(d.diamondToRush) && d.diamondToRush > 0) state.diamondToRush = d.diamondToRush;
+    if (Number.isInteger(d.referralDiamondReward) && d.referralDiamondReward > 0) state.referralDiamondReward = d.referralDiamondReward;
+    if (Number.isInteger(d.adsWatched)) { state.adsWatched = d.adsWatched; setNum($('pAdsWatched'), d.adsWatched, false); }
+    setBalances(d, false);
+    renderRates();
+    renderShopList();
     return true;
-  }
-
-  async function refresh() {
-    const cid = state.selId ? '&competitionId=' + state.selId : '';
-    const [lb, st] = await Promise.all([api('GET', '/api/leaderboard/current?limit=50' + cid), api('GET', '/api/users/me/stats' + (cid ? '?' + cid.slice(1) : ''))]);
-    // Javob kelguncha foydalanuvchi boshqa chempionatni tanlagan bo'lishi mumkin: eski natija yangisini bosib ketmasin
-    if (state.selId && ((ok(lb) && lb.data.competition && lb.data.competition.id !== state.selId) || (ok(st) && st.data.competition && st.data.competition.id !== state.selId))) return false;
-    if (ok(lb)) {
-      renderBoard(lb.data.leaderboard, lb.data.me, Boolean(lb.data.competition));
-      renderChampBoard(lb.data.leaderboard, lb.data.me);
-      state.refreshSec = lb.data.refreshAfterSec || state.refreshSec;
-    } else if (!state.gated) {
-      renderBoardError();
-      renderChampBoardError();
-    }
-    if (ok(st)) renderMe(st.data);
-    return ok(lb) && ok(st);
   }
 
   async function retryAll() {
     $('homeError').hidden = true;
-    $('heroCard').hidden = false;
-    $('heroSk').hidden = false;
-    $('heroBody').hidden = true;
     haptic('light');
-    await Promise.all([loadMeta(), refresh()]);
+    await Promise.all([refresh(), loadShopPreview()]);
     state.loaded = true;
     updateWatchState();
     if (!state.pollId) schedule();
   }
 
-  // ---------- Reklama oqimi ----------
-  // Server tasdig'i (AdsGram Reward URL) kutilayotgan bo'lsa sessiya holatini so'rab turadi
+  /** Kurslar va mukofotlar (qiymatlar serverdan: config). */
+  function renderRates() {
+    const rate = tt('home.rate', { n: nf.format(state.diamondToRush) });
+    plain($('homeRate'), rate);
+    plain($('convRate'), rate);
+    tx($('homeTasksHint'), 'home.tasks_hint', { n: nf.format(state.diamondPerAd) });
+    tx($('homeRef'), 'home.ref', { n: nf.format(state.referralDiamondReward) });
+    $('adReward').textContent = '+' + nf.format(state.diamondPerAd) + ' 💎';
+    $('taskRefReward').textContent = '+' + nf.format(state.referralDiamondReward) + ' 💎';
+    $('refReward').textContent = '+' + nf.format(state.referralDiamondReward) + ' 💎';
+    if (!state.busy) $('plusOne').textContent = '+' + nf.format(state.diamondPerAd) + ' 💎';
+    updateConvertState();
+  }
+
+  // ---------- Do'kon: Home preview (to'liq do'kon sahifasi keyingi qismda) ----------
+  function shopMiniRow(p) {
+    const row = el('div', 'shop-mini');
+    row.append(el('span', 'name', p.title), el('span', 'val', '🪙 ' + nf.format(p.priceRush)));
+    return row;
+  }
+
+  function renderShopPreview() {
+    const card = $('homeShop');
+    const items = state.shopItems.slice(0, 3);
+    card.hidden = items.length === 0; // do'kon bo'sh bo'lsa Home da ko'rinmaydi
+    $('homeShopList').replaceChildren(...items.map(shopMiniRow));
+  }
+
+  async function loadShopPreview() {
+    const res = await api('GET', '/api/shop/products');
+    if (!ok(res) || !Array.isArray(res.data.items)) return false;
+    state.shopItems = res.data.items;
+    renderShopPreview();
+    renderShopList();
+    return true;
+  }
+
+  const SHOP_IMG_RE = /^\/uploads\/[a-z]+\/[\w.-]+\.(jpg|jpeg|png|webp)$/i;
+  const shopBuy = { busy: false, reqIds: {} };
+  const orders = { items: [], cursor: null, loading: false, loaded: false, failed: false };
+
+  function shopThumb(url, cls) {
+    const box = el('div', cls);
+    if (url && SHOP_IMG_RE.test(url)) {
+      const img = document.createElement('img');
+      img.alt = ''; img.loading = 'lazy'; img.decoding = 'async'; img.src = url;
+      img.onerror = () => box.replaceChildren(document.createTextNode('🎁'));
+      box.appendChild(img);
+    } else box.textContent = '🎁';
+    return box;
+  }
+
+  function productCard(p) {
+    const c = el('div', 'card shop-card');
+    const info = el('div', 'shop-info');
+    info.append(el('b', null, p.title));
+    if (p.description) info.append(el('div', 'muted', p.description));
+    if (Number.isInteger(p.stock)) { const st = el('div', 'muted'); tx(st, 'shop.stock', { n: nf.format(p.stock) }); info.append(st); }
+    const foot = el('div', 'shop-foot');
+    const short = p.priceRush - state.coins;
+    const btn = el('button', 'btn sm', '');
+    btn.type = 'button';
+    if (short > 0) { tx(btn, 'shop.short', { n: nf.format(short) }); btn.classList.add('sec'); } else tx(btn, 'shop.buy');
+    btn.addEventListener('click', () => buyProduct(p));
+    foot.append(el('span', 'shop-price', '🪙 ' + nf.format(p.priceRush)), btn);
+    info.append(foot);
+    c.append(shopThumb(p.imageUrl, 'shop-img'), info);
+    return c;
+  }
+
+  function renderShopList() {
+    const box = $('shopList');
+    if (!box) return;
+    if (!state.shopItems.length) { box.replaceChildren(stateNode('🛍', 'shop.empty', 'shop.empty_hint')); return; }
+    box.replaceChildren(...state.shopItems.map(productCard));
+  }
+
+  async function buyProduct(p) {
+    if (shopBuy.busy || state.gated) return;
+    if (p.priceRush > state.coins) { toast(tt('reason.INSUFFICIENT_FUNDS'), true); haptic('error'); return; } // tezkor xabar; haqiqiy tekshiruv serverda
+    if (!(await confirmBox(tt('shop.confirm', { t: p.title, n: nf.format(p.priceRush) })))) return;
+    shopBuy.busy = true;
+    if (!shopBuy.reqIds[p.id]) shopBuy.reqIds[p.id] = uuid(); // tarmoq xatosidan keyin shu id bilan qayta uriniladi
+    try {
+      const r = await api('POST', '/api/shop/buy', { productId: p.id, requestId: shopBuy.reqIds[p.id] }, { retry: false });
+      if (ok(r)) {
+        delete shopBuy.reqIds[p.id];
+        setBalances(r.data, false);
+        coinHist.loadedAt = 0;
+        toast(tt('shop.bought'), false);
+        haptic('success');
+      } else if (r.status === 0) {
+        toast(tt('err.network'), true); haptic('error');
+      } else {
+        if (r.status < 500) delete shopBuy.reqIds[p.id];
+        const d = r.data || {};
+        setBalances(d, false);
+        toast(tt(reasonKey(d.reason, 'shop.buy_failed')), true);
+        haptic('error');
+      }
+      await Promise.all([loadShopPreview(), loadOrders(false, true)]);
+    } catch (_e) {
+      toast(tt('err.unexpected'), true);
+    } finally {
+      shopBuy.busy = false;
+    }
+  }
+
+  function orderRow(o) {
+    const row = el('div', 'row');
+    const name = el('span', 'name');
+    name.append(el('span', null, o.productTitle), el('small', 'tx-date', new Date(o.createdAt).toLocaleString(i18n.locale, DATE_FMT)));
+    const st = ti('small', 'ord-status ' + o.status, 'order.' + o.status);
+    name.append(st);
+    if (o.adminNote) name.append(el('small', 'muted', tt('shop.admin_note', { t: o.adminNote })));
+    if (o.proofImage && SHOP_IMG_RE.test(o.proofImage)) {
+      const img = document.createElement('img');
+      img.className = 'ord-proof'; img.alt = tt('shop.proof'); img.loading = 'lazy'; img.src = o.proofImage;
+      name.append(img);
+    }
+    row.append(name, el('span', 'val', '🪙 ' + nf.format(o.priceRush)));
+    return row;
+  }
+
+  function renderOrders() {
+    for (const id of ['shopOrders', 'profOrders']) {
+      const box = $(id);
+      if (!box) continue;
+      if (orders.failed && !orders.items.length) { box.replaceChildren(stateNode('📡', 'shop.orders_fail', null, 'common.retry', () => loadOrders(false, true).catch(() => {}))); continue; }
+      if (!orders.loaded) { box.replaceChildren(skeleton(2)); continue; }
+      if (!orders.items.length) { box.replaceChildren(stateNode('📦', 'shop.orders_empty', 'shop.orders_empty_hint')); continue; }
+      box.replaceChildren(...(id === 'profOrders' ? orders.items.slice(0, 3) : orders.items).map(orderRow));
+    }
+    $('shopOrdersMore').hidden = !orders.cursor;
+  }
+
+  async function loadOrders(more, force) {
+    if (orders.loading) return;
+    if (!more && !force && orders.loaded && Date.now() - orders.at < 15000) return;
+    orders.loading = true;
+    try {
+      const q = '/api/shop/orders?limit=20' + (more && orders.cursor ? '&cursor=' + encodeURIComponent(orders.cursor) : '');
+      const res = await api('GET', q);
+      if (!ok(res) || !Array.isArray(res.data.items)) { orders.failed = true; return; }
+      orders.failed = false; orders.loaded = true; orders.at = Date.now();
+      orders.items = more ? orders.items.concat(res.data.items) : res.data.items;
+      orders.cursor = res.data.nextCursor || null;
+    } finally {
+      orders.loading = false;
+      renderOrders();
+    }
+  }
+
+  async function loadShop() {
+    const ok1 = await loadShopPreview();
+    if (!ok1 && !state.shopItems.length) $('shopList').replaceChildren(stateNode('📡', 'shop.fail', 'err.check_network', 'common.retry', () => loadShop().catch(() => {})));
+    await loadOrders(false, false);
+  }
+
   async function waitConfirmation(sessionId) {
     for (let i = 0; i < 12; i += 1) {
       await sleep(2500);
@@ -1174,12 +787,12 @@
     return reasonKey(reason, 'reason.SESSION_REJECTED');
   }
 
-  /** Server reklamani hisoblagandan keyin: animatsiya + haptic. Coin va balans serverdan kelgan javobdan olinadi. */
+  /** Server reklamani hisoblagandan keyin: animatsiya + haptic. Olmos va balans serverdan kelgan javobdan olinadi. */
   function celebrate(data) {
-    const coins = (data && Number.isInteger(data.coins) && data.coins) || state.adReward;
-    say('watch.credited', 'good', { n: coins });
+    const gained = (data && Number.isInteger(data.reward) && data.reward) || state.diamondPerAd;
+    say('watch.credited', 'good', { n: gained });
     coinHist.loadedAt = 0;
-    $('plusOne').textContent = '+' + coins;
+    $('plusOne').textContent = '+' + nf.format(gained) + ' 💎';
     haptic('success');
     const btn = $('watch');
     btn.classList.add('ok');
@@ -1189,7 +802,7 @@
     void plus.offsetWidth;
     plus.classList.add('go');
     burstSparks();
-    if (data && Number.isInteger(data.rushCoins)) { state.coins = data.rushCoins; setCoinBal(data.rushCoins, true); }
+    if (data && Number.isInteger(data.diamonds)) setBalances({ diamonds: data.diamonds }, true);
     if (state.cooldownMs) startCooldown(state.cooldownMs);
   }
 
@@ -1200,9 +813,8 @@
     return window.Adsgram || null;
   }
 
-  async function watchAd(quick) {
+  async function watchAd() {
     if (state.busy || state.gated) return;
-    quickMode = quick === true;
     setBusy(true, 'watch.preparing');
     say('');
     haptic('light');
@@ -1212,8 +824,8 @@
       if (!ok(s)) { say(failKey(s), 'bad'); haptic('error'); return; }
 
       const cfg = s.data.adsgram || {};
-      const mainId = cfg.blockId || state.blockId;
-      const blockId = quickMode ? (cfg.quickBlockId || state.quickBlockId || mainId) : mainId;
+      const blockId = cfg.blockId || state.blockId;
+      if (blockId) state.blockId = blockId;
       // sad.min.js "defer" bilan yuklanadi — sekin tarmoqda hali tayyor bo'lmasligi mumkin, biroz kutamiz
       const sdk = await waitAdsgram(4000);
       if (!blockId || !sdk) { say('watch.unavailable', 'bad'); markNoAd(); return; }
@@ -1272,187 +884,17 @@
     } finally {
       if (atLeast('6.2')) tgTry(() => tg.disableClosingConfirmation());
       setBusy(false);
-      quickMode = false;
     }
   }
 
 
-  // ---------- Sovrinlar: Joriy / Tarix tablari ----------
-  // Tarix ma'lumoti to'liq serverdan (/api/competition/history): g'olib, reklama soni, sovrin, topshirilganlik va proof rasm.
-  const PROOF_URL_RE = /^\/uploads\/proofs\/[0-9a-f-]{36}\.(jpg|png|webp)$/;
-  const champ = { tab: 'current', loadedAt: 0, loading: false, list: [] };
-
-  function whoName(w) { return w.username ? '@' + w.username : (w.firstName || tt('championship.unknown_user')); }
-
-  function monthLabel(c, upper) {
-    let s = c.title;
-    if (Number.isInteger(c.year) && Number.isInteger(c.month)) {
-      try {
-        s = new Intl.DateTimeFormat(i18n.locale, { month: 'long', year: 'numeric', timeZone: 'UTC' }).format(new Date(Date.UTC(c.year, c.month - 1, 1)));
-      } catch (_e) { s = c.title; }
-    }
-    return upper ? s.toLocaleUpperCase(i18n.locale) : s.charAt(0).toLocaleUpperCase(i18n.locale) + s.slice(1);
-  }
-
-  function syncChampInd() {
-    const on = champ.tab === 'history';
-    $('champInd').style.transform = on ? 'translateX(100%)' : 'translateX(0)';
-    document.querySelectorAll('.ctab').forEach((b) => {
-      const active = b.dataset.ctab === champ.tab;
-      b.classList.toggle('active', active);
-      b.setAttribute('aria-selected', active ? 'true' : 'false');
-    });
-  }
-
-  function setChampTab(tab) {
-    if (tab === champ.tab) return;
-    champ.tab = tab;
-    syncChampInd();
-    for (const [name, pane] of [['current', $('ctab-current')], ['history', $('ctab-history')]]) {
-      pane.hidden = name !== tab;
-      if (name === tab) { pane.classList.remove('ctab-in'); void pane.offsetWidth; pane.classList.add('ctab-in'); }
-    }
-    haptic('select');
-    if (tab === 'history') loadChampHistory().catch(() => {});
-  }
-
-  function openProofLightbox(src) {
-    const bg = el('div', 'lightbox');
-    const img = document.createElement('img');
-    img.alt = tt('championship.proof_alt');
-    img.src = src;
-    bg.appendChild(img);
-    const close = () => { bg.remove(); document.removeEventListener('keydown', onKey); };
-    const onKey = (e) => { if (e.key === 'Escape') close(); };
-    bg.addEventListener('click', close);
-    document.addEventListener('keydown', onKey);
-    document.body.appendChild(bg);
-  }
-
-  function proofBlock(w) {
-    const box = el('div', 'proof');
-    if (w.proofImage && PROOF_URL_RE.test(w.proofImage)) {
-      box.appendChild(el('div', 'proof-cap', tt('championship.proof')));
-      const btn = el('button', 'proof-img');
-      btn.type = 'button';
-      const img = document.createElement('img');
-      img.alt = tt('championship.proof_alt'); img.loading = 'lazy'; img.decoding = 'async'; img.src = w.proofImage;
-      btn.appendChild(img);
-      btn.addEventListener('click', () => openProofLightbox(w.proofImage));
-      box.appendChild(btn);
-    } else {
-      box.appendChild(el('div', 'proof-pending', '⏳ ' + tt('championship.proof_pending')));
-    }
-    return box;
-  }
-
-  function winnerBlock(w) {
-    const b = el('div', 'wblock');
-    b.appendChild(el('div', 'wplace', `${MEDALS[w.place] || ''} ${tt('championship.place', { n: w.place })}`.trim()));
-    const rows = el('div', 'wrows');
-    for (const [k, v] of [['championship.winner', whoName(w)], ['championship.ad_views', nf.format(w.validAds)], ['championship.prize', w.prize]]) {
-      const r = el('div', 'wrow');
-      r.append(el('span', 'wk', tt(k)), el('b', 'wv', v));
-      rows.appendChild(r);
-    }
-    b.appendChild(rows);
-    if (w.delivered) b.appendChild(el('div', 'delivered', tt('championship.delivered')));
-    b.appendChild(proofBlock(w));
-    return b;
-  }
-
-  function openChampSheet(c) {
-    const bg = el('div', 'sheet-bg');
-    const sheet = el('div', 'sheet csheet');
-    sheet.setAttribute('role', 'dialog');
-    sheet.setAttribute('aria-modal', 'true');
-    const head = el('div', 'csheet-head');
-    head.append(el('h3', null, tt('championship.title_of', { month: monthLabel(c, true) })));
-    const x = el('button', 'csheet-x', '✕');
-    x.type = 'button';
-    x.setAttribute('aria-label', tt('championship.close'));
-    head.appendChild(x);
-    sheet.appendChild(head);
-    if (!c.winners.length) sheet.appendChild(el('p', 'muted center', tt('championship.no_winners')));
-    for (const w of c.winners) sheet.appendChild(winnerBlock(w));
-    bg.appendChild(sheet);
-    const close = () => { bg.remove(); document.removeEventListener('keydown', onKey); };
-    const onKey = (e) => { if (e.key === 'Escape') close(); };
-    x.addEventListener('click', close);
-    bg.addEventListener('click', (e) => { if (e.target === bg) close(); });
-    document.addEventListener('keydown', onKey);
-    document.body.appendChild(bg);
-    haptic('light');
-  }
-
-  function historyCard(c) {
-    const card = el('button', 'hcard');
-    card.type = 'button';
-    card.append(el('div', 'hc-month', '📅 ' + monthLabel(c)), el('div', 'hc-status', tt('championship.finished')));
-    const list = el('div', 'hc-winners');
-    for (const w of c.winners.slice(0, 3)) {
-      const r = el('div', 'hc-row');
-      r.append(el('span', 'hc-medal', MEDALS[w.place] || w.place + '.'), el('span', 'hc-name', whoName(w)));
-      list.appendChild(r);
-    }
-    if (!c.winners.length) list.appendChild(el('div', 'muted', tt('championship.no_winners')));
-    card.append(list, el('span', 'hc-go', '›'));
-    card.addEventListener('click', () => openChampSheet(c));
-    return card;
-  }
-
-  function renderChampHistory() {
-    const box = $('champHistory');
-    box.replaceChildren();
-    if (!champ.list.length) {
-      box.appendChild(stateNode('📜', 'championship.empty', 'championship.empty_hint'));
-      return;
-    }
-    const wrap = el('div', 'stagger');
-    for (const c of champ.list) wrap.appendChild(historyCard(c));
-    box.appendChild(wrap);
-  }
-
-  async function loadChampHistory(force) {
-    if (champ.loading || (!force && champ.loadedAt && Date.now() - champ.loadedAt < 30000)) return;
-    champ.loading = true;
-    if (!champ.loadedAt) $('champHistory').replaceChildren(skeleton(3, 'tall'));
-    try {
-      const res = await api('GET', '/api/competition/history?limit=20');
-      if (!ok(res)) {
-        if (!champ.loadedAt && !state.gated) {
-          $('champHistory').replaceChildren(stateNode('📡', 'championship.error', null, 'championship.retry', () => loadChampHistory(true)));
-        }
-        return;
-      }
-      champ.loadedAt = Date.now();
-      champ.list = res.data.competitions || [];
-      renderChampHistory();
-    } finally {
-      champ.loading = false;
-    }
-  }
-
-  function initChampTabs() {
-    document.querySelectorAll('.ctab').forEach((b) => b.addEventListener('click', () => setChampTab(b.dataset.ctab)));
-    syncChampInd();
-  }
-
-  // ---------- Rush Coin: hint, tikish, referal, tarix ----------
+  // ---------- Olmos / Rush Coin: almashtirish, referal, tarix ----------
   const coinHist = { cursor: null, loadedAt: 0, loading: false };
   const ref = { loadedAt: 0, link: null, loading: false };
-  const bet = { busy: false };
+  const conv = { busy: false, reqId: null };
   // Tanga yuborish: reqId — joriy urinishning UUID'si (tarmoq xatosidan keyingi qayta urinishda o'zgarmaydi)
   const send = { busy: false, reqId: null };
 
-  function renderCoinHint() {
-    tx($('coinHint'), 'coin.hint', { n: state.adReward });
-    tx($('homeRef'), 'coin.ref', { n: state.referralReward });
-    $('refReward').textContent = '+' + state.referralReward;
-    $('rushAdReward').textContent = '+' + state.adReward;
-    const qr = $('quickAdReward'); if (qr) qr.textContent = '+' + state.adReward;
-    const tr = $('taskRefReward'); if (tr) tr.textContent = '+' + state.referralReward;
-  }
 
   function uuid() {
     if (window.crypto && typeof window.crypto.randomUUID === 'function') return window.crypto.randomUUID();
@@ -1463,103 +905,93 @@
     return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
   }
 
-  function betAmount() {
-    const v = $('betAmount').value.trim();
+
+
+
+
+
+
+  // ---------- Olmos -> Rush Coin almashtirish (Vazifalar) ----------
+  // Klient faqat olmos miqdori va requestId yuboradi; kurs, balans va natija serverda. "≈ N 🪙" faqat ko'rsatish uchun.
+  function convAmount() {
+    const v = $('convAmount').value.trim();
     return /^\d{1,9}$/.test(v) ? Number(v) : 0;
   }
 
-  function betSay(key, kind, vars) {
-    const m = $('betMsg');
+  function convSay(key, kind, vars) {
+    const m = $('convMsg');
     if (key) tx(m, key, vars); else plain(m, '');
-    m.className = 'msg' + (kind ? ' ' + kind : '');
+    m.className = 'msg center' + (kind ? ' ' + kind : '');
   }
 
-  // Faqat ko'rsatish: haqiqiy tekshiruv (balans, limit, competition ochiqligi) serverda
-  function updateBetState() {
-    if (!$('betBtn')) return;
-    const live = isLive();
-    const full = state.activeBets >= state.maxBets;
-    $('betSlots').textContent = `${state.activeBets}/${state.maxBets}`;
-    $('betBtn').disabled = bet.busy || !state.loaded || !live || full || betAmount() <= 0;
-    $('betBtn').classList.toggle('busy', bet.busy);
-    const target = $('betTarget');
-    const sc = selectedChamp();
-    if (target) plain(target, sc ? tt('champs.bet_target', { name: sc.title }) : '');
-    const note = $('betNote');
-    if (!state.competition) tx(note, 'bet.note.none');
-    else if (!live) tx(note, state.startAt && Date.now() < state.startAt ? 'bet.note.upcoming' : 'bet.note.closed');
-    else if (full) tx(note, 'bet.note.full', { n: state.maxBets });
-    else tx(note, 'bet.note.info', { n: state.lossPct });
+  function updateConvertState() {
+    const b = $('convBtn');
+    if (!b) return;
+    const n = convAmount();
+    b.disabled = conv.busy || !state.loaded || n <= 0;
+    b.classList.toggle('busy', conv.busy);
+    if (n > 0) tx($('convPreview'), 'tasks.conv_get', { n: nf.format(n * state.diamondToRush) }); else plain($('convPreview'), '');
   }
 
-  async function placeBet() {
-    if (bet.busy || state.gated) return;
-    const amount = betAmount();
-    betSay('');
-    if (!amount) return;
-    if (amount < state.minBet) { betSay('bet.min', 'bad', { n: nf.format(state.minBet) }); haptic('error'); return; }
-    if (amount > state.maxBet) { betSay('bet.max', 'bad', { n: nf.format(state.maxBet) }); haptic('error'); return; }
-    if (amount > state.coins) { betSay('reason.INSUFFICIENT_FUNDS', 'bad'); haptic('error'); return; }
-    if (!(await confirmBox(tt('bet.confirm', { n: nf.format(amount) })))) return;
+  async function convertDiamonds() {
+    if (conv.busy || state.gated) return;
+    const n = convAmount();
+    convSay('');
+    if (!n) { convSay('tasks.conv_bad', 'bad'); haptic('error'); return; }
+    if (n > state.diamonds) { convSay('reason.INSUFFICIENT_FUNDS', 'bad'); haptic('error'); return; } // tezkor xabar; haqiqiy tekshiruv serverda
+    if (!(await confirmBox(tt('tasks.conv_confirm', { d: nf.format(n), r: nf.format(n * state.diamondToRush) })))) return;
 
-    bet.busy = true;
-    updateBetState();
+    conv.busy = true;
+    updateConvertState();
+    if (!conv.reqId) conv.reqId = uuid(); // tarmoq xatosidan keyin shu id bilan qayta uriniladi (idempotent)
     try {
-      // Klient faqat miqdor va requestId yuboradi; userId/balans yuborilmaydi — hammasi serverda
-      const r = await api('POST', '/api/competition/bet', { amount, competitionId: state.selId, requestId: uuid() }, { retry: false });
+      const r = await api('POST', '/api/coins/convert', { diamonds: n, requestId: conv.reqId }, { retry: false });
       if (ok(r)) {
-        if (Number.isInteger(r.data.rushCoins)) { state.coins = r.data.rushCoins; setCoinBal(r.data.rushCoins, false); }
-        if (Number.isInteger(r.data.activeBets)) state.activeBets = r.data.activeBets;
-        $('betAmount').value = '';
+        conv.reqId = null;
+        setBalances(r.data, true);
         coinHist.loadedAt = 0;
-        betSay('bet.placed', 'good', { n: nf.format(amount) });
+        const got = r.data.converted && Number.isInteger(r.data.converted.rush) ? r.data.converted.rush : n * state.diamondToRush;
+        $('convAmount').value = '';
+        convSay('');
+        toast(tt('tasks.conv_done', { d: nf.format(n), r: nf.format(got) }), false);
         haptic('success');
-        await refresh();
-        loadMeta().catch(() => {}); // kartalardagi ishtirokchilar/o'rin yangilansin
+      } else if (r.status === 0) {
+        convSay('err.network', 'bad'); // reqId saqlanadi
+        haptic('error');
       } else {
-        if (r.status === 0) betSay('err.network', 'bad');
-        else {
-          const d = r.data || {};
-          if (Number.isInteger(d.rushCoins)) { state.coins = d.rushCoins; setCoinBal(d.rushCoins, false); }
-          betSay(reasonKey(d.reason, 'bet.failed'), 'bad');
-        }
+        const d = r.data || {};
+        if (r.status < 500) conv.reqId = null; // server aniq rad etdi — keyingi urinish yangi so'rov
+        setBalances(d, false);
+        if (d.reason === 'DUPLICATE_REQUEST') { coinHist.loadedAt = 0; convSay('tasks.conv_duplicate', 'bad'); }
+        else convSay(reasonKey(d.reason, 'tasks.conv_failed'), 'bad');
         haptic('error');
         refresh().catch(() => {});
       }
     } catch (_e) {
-      betSay('err.unexpected', 'bad');
+      convSay('err.unexpected', 'bad');
     } finally {
-      bet.busy = false;
-      updateBetState();
+      conv.busy = false;
+      updateConvertState();
     }
   }
 
-  // ---------- Bosh sahifa: chempionatga kirish; reklama Vazifalar sahifasida ----------
-  // Faqat navigatsiya/ko'rinish: reklama oqimi (watchAd, AdsGram, server tasdig'i) o'zgarmagan.
-  function initRush() {
-    // "RUSH OLISH" tugmasi data-go="tasks" orqali Vazifalar sahifasiga o'tkazadi (init() dagi umumiy handler)
-    $('joinBtn').addEventListener('click', () => {
-      haptic('select');
-      if (state.selId) openChamp(state.selId);
-    });
-  }
-
-  function initBet() {
-    const input = $('betAmount');
+  function initConvert() {
+    const input = $('convAmount');
     input.addEventListener('input', () => {
       const clean = input.value.replace(/\D+/g, '').replace(/^0+(?=\d)/, '');
       if (clean !== input.value) input.value = clean;
-      betSay('');
-      updateBetState();
+      conv.reqId = null; // miqdor o'zgardi — yangi so'rov
+      convSay('');
+      updateConvertState();
     });
-    document.querySelectorAll('[data-chip]').forEach((b) => b.addEventListener('click', () => {
-      const v = b.dataset.chip === 'max' ? Math.min(state.coins, state.maxBet) : Number(b.dataset.chip);
-      input.value = v > 0 ? String(v) : '';
+    $('convMax').addEventListener('click', () => {
+      input.value = state.diamonds > 0 ? String(state.diamonds) : '';
+      conv.reqId = null;
       haptic('select');
-      betSay('');
-      updateBetState();
-    }));
-    $('betBtn').addEventListener('click', placeBet);
+      convSay('');
+      updateConvertState();
+    });
+    $('convBtn').addEventListener('click', convertDiamonds);
   }
 
   // ---------- Tanga yuborish (Profil -> 💸) ----------
@@ -1694,9 +1126,9 @@
       if (!ok(res)) return;
       ref.loadedAt = Date.now();
       const d = res.data;
-      if (Number.isInteger(d.reward)) { state.referralReward = d.reward; renderCoinHint(); }
+      if (Number.isInteger(d.rewardDiamonds) && d.rewardDiamonds > 0) { state.referralDiamondReward = d.rewardDiamonds; renderRates(); }
       setNum($('refInvited'), d.invited, false);
-      $('refEarned').textContent = '+' + nf.format(d.earned || 0);
+      $('refEarned').textContent = '+' + nf.format(d.earnedDiamonds || 0) + ' 💎';
       ref.link = typeof d.link === 'string' && /^https:\/\/t\.me\//.test(d.link) ? d.link : null;
       if (ref.link) plain($('refLink'), ref.link); else tx($('refLink'), 'ref.no_link');
       $('refShare').disabled = !ref.link;
@@ -1735,11 +1167,15 @@
     });
   }
 
+  /** Olib tashlangan eski turdagi ledger yozuvlari bazada qoladi (balans mosligi uchun), ilova ularni ko'rsatmaydi. */
+  const HIDDEN_TX = new Set(['COMPETITION_BET', 'LOSS_REFUND', 'COMPETITION_WIN']);
+
   function txRow(t) {
+    const diamond = t.currency === 'DIAMOND';
     const row = el('div', 'row tx');
     const name = el('span', 'name');
     name.append(el('span', null, i18n.has('tx.' + t.type) ? tt('tx.' + t.type) : t.type), el('small', 'tx-date', new Date(t.createdAt).toLocaleString(i18n.locale, DATE_FMT)));
-    row.append(name, el('span', 'val ' + (t.amount > 0 ? 'pos' : 'neg'), (t.amount > 0 ? '+' : '') + nf.format(t.amount)));
+    row.append(name, el('span', 'val ' + (t.amount > 0 ? 'pos' : 'neg'), (t.amount > 0 ? '+' : '') + nf.format(t.amount) + (diamond ? ' 💎' : ' 🪙')));
     return row;
   }
 
@@ -1758,25 +1194,21 @@
       if (!more) { box.replaceChildren(); coinHist.loadedAt = Date.now(); state.coinItems = []; }
       coinHist.cursor = res.data.nextCursor || null;
       $('coinHistMore').hidden = !coinHist.cursor;
-      if (Number.isInteger(res.data.rushCoins)) { state.coins = res.data.rushCoins; setCoinBal(res.data.rushCoins, false); setNum($('pCoins'), res.data.rushCoins, false); }
+      setBalances(res.data, false);
       if (!more && !res.data.items.length) { box.appendChild(stateNode('💰', 'coinhist.empty', 'coinhist.empty_hint')); return; }
-      for (const t of res.data.items) { state.coinItems.push(t); box.appendChild(txRow(t)); }
+      for (const t of res.data.items) { if (HIDDEN_TX.has(t.type)) continue; state.coinItems.push(t); box.appendChild(txRow(t)); }
     } finally {
       coinHist.loading = false;
     }
   }
 
   // ---------- Avto-yangilanish ----------
-  // Sahifa ko'rinib turganda; yashirin bo'lsa to'xtaydi. Har 4-davrda competition/sovrinlar ham yangilanadi.
+  // Sahifa ko'rinib turganda balanslar yangilanadi; yashirin bo'lsa to'xtaydi.
   function schedule() {
     clearTimeout(state.pollId);
     state.pollId = setTimeout(async () => {
       if (!document.hidden && !state.busy && !state.gated) {
-        state.ticks += 1;
-        try {
-          await refresh();
-          if (state.ticks % 4 === 0) await loadMeta();
-        } catch (_e) { /* keyingi urinish */ }
+        try { await refresh(); } catch (_e) { /* keyingi urinish */ }
       }
       schedule();
     }, state.refreshSec * 1000);
@@ -1784,24 +1216,17 @@
 
   function everySecond() {
     if (document.hidden || state.gated) return;
-    if (state.competition) updateCountTarget();
-    renderTimer();
-    tickChamps();
     updateWatchState();
-    // Vaqt tugagan bo'lsa (server auto-end qiladi) holatni yangilab turamiz
-    if (state.endAt && Date.now() > state.endAt + 2000 && Date.now() - state.metaReloadAt > 20000) loadMeta().catch(() => {});
   }
 
   async function init() {
     tgSetup();
     initTheme();
     initLang();
-    initChampTabs();
     document.querySelectorAll('[data-go]').forEach((b) => b.addEventListener('click', () => go(b.dataset.go)));
-    $('watch').addEventListener('click', () => watchAd(false));
-    $('quickAd').addEventListener('click', () => watchAd(true));
-    initRush();
-    initBet();
+    $('watch').addEventListener('click', () => watchAd());
+    initConvert();
+    $('shopOrdersMore').addEventListener('click', () => loadOrders(true).catch(() => {}));
     initReferral();
     initSend();
     initSubGate();
@@ -1810,7 +1235,7 @@
     document.addEventListener('visibilitychange', () => {
       root.classList.toggle('paused', document.hidden);
       if (!document.hidden && state.gated && state.gateKind === 'subscribe') checkSubscription().catch(() => {}); // kanaldan qaytganda avto-tekshirish
-      if (!document.hidden && state.loaded && !state.gated) { refresh().catch(() => {}); loadMeta().catch(() => {}); }
+      if (!document.hidden && state.loaded && !state.gated) { refresh().catch(() => {}); loadShopPreview().catch(() => {}); }
     });
     initNavDrag();
     window.addEventListener('resize', syncNav);
@@ -1834,8 +1259,9 @@
     const [meR, subR] = await Promise.all([meRes, api('GET', '/api/subscription/status')]);
     if (!state.gated && ok(subR) && subR.data.required && !subR.data.subscribed) gate('subscribe', subR.data.channel);
     if (state.gated && state.gateKind === 'subscribe') return; // ilovaning qolgan yuklanishi boshlanmaydi
-    await Promise.all([loadMeta(), refresh()]);
+    await Promise.all([refresh(), loadShopPreview()]);
     state.loaded = true;
+    renderRates();
     updateWatchState();
     if (!state.gated) { schedule(); loadRole(meR).catch(() => {}); }
   }
@@ -1899,8 +1325,8 @@
     h.id = 'langTitle';
     const x = el('button', 'csheet-x', '✕');
     x.type = 'button';
-    x.dataset.i18nAria = 'championship.close';
-    x.setAttribute('aria-label', tt('championship.close'));
+    x.dataset.i18nAria = 'common.close';
+    x.setAttribute('aria-label', tt('common.close'));
     head.append(h, x);
     const list = el('div', 'lang-list');
     list.setAttribute('role', 'radiogroup');
@@ -1966,16 +1392,12 @@
   // JS yig'adigan bo'limlar qayta chiziladi — sahifa yangilanmaydi.
   function onLangChange() {
     document.querySelectorAll('[data-v]').forEach((n) => { n.textContent = nf.format(Number(n.dataset.v)); });
-    document.querySelectorAll('.lightbox, .csheet').forEach((n) => { (n.closest('.sheet-bg') || n).remove(); }); // ochiq oyna eski tilda qolmasin
-    if (state.metaOk) { renderCompetition(state.competition, state.participants); renderChamps(); }
-    renderCoinHint();
-    renderChampDetail();
-    if (state.chOk && state.lbData) renderChampBoard(state.lbData.list, state.lbData.me);
-    if (state.me) renderMe(state.me);
-    if (state.lbData) { state.lbSig = ''; renderBoard(state.lbData.list, state.lbData.me, state.lbData.hasCompetition); }
+    document.querySelectorAll('.csheet').forEach((n) => { (n.closest('.sheet-bg') || n).remove(); }); // ochiq oyna eski tilda qolmasin
+    renderRates();
+    renderShopPreview();
+    renderShopList();
+    renderOrders();
     renderProfile();
-    if (state.histLoaded) renderHistory();
-    if (champ.loadedAt) renderChampHistory();
     if (coinHist.loadedAt) {
       const box = $('coinHist');
       box.replaceChildren();
@@ -1983,7 +1405,6 @@
       for (const t of state.coinItems) box.appendChild(txRow(t));
     }
     updateWatchState();
-    updateBetState();
   }
   window.addEventListener('adrush:langchange', onLangChange);
 
@@ -1995,7 +1416,7 @@
     $('pRole').textContent = res.data.role === 'SUPER_ADMIN' ? 'SUPER ADMIN' : 'ADMIN';
     await new Promise((resolve, reject) => {
       const sc = document.createElement('script');
-      sc.src = 'admin.js?v=6';
+      sc.src = 'admin.js?v=7';
       sc.onload = resolve;
       sc.onerror = reject;
       document.body.appendChild(sc);
@@ -2004,7 +1425,7 @@
     syncNav();
   }
 
-  window.AdRush = { api, el, nf: nfFixed, tg, state, toast, confirmBox, prizeThumb, placeLabel, who, go, stateNode, skeleton, haptic, setBack, syncNav, reduceMotion, setNum, currentTheme };
+  window.AdRush = { api, el, nf: nfFixed, tg, state, toast, confirmBox, who, go, stateNode, skeleton, haptic, setBack, syncNav, reduceMotion, setNum, currentTheme };
 
   init();
 })();

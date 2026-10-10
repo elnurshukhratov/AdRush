@@ -15,17 +15,21 @@ async function getAdminRole(telegramId) {
   return row ? row.role : null;
 }
 
-/** Dashboard: userlar, bloklanganlar, shubhali faollik (24 soat), valid reklamalar va olmos/Rush Coin umumiy statistikasi. */
+/** Dashboard: userlar, bloklanganlar, shubhali faollik (24 soat), valid reklamalar, olmos/Rush Coin umumiy statistikasi va buyurtmalar soni holat bo'yicha. */
 async function getOverview() {
   const dayAgo = new Date(Date.now() - 24 * 3600 * 1000);
 
-  const [totalUsers, blocked, lifetimeValidAds, suspicious24h, balances] = await Promise.all([
+  const [totalUsers, blocked, lifetimeValidAds, suspicious24h, balances, orderGroups] = await Promise.all([
     prisma.user.count(),
     prisma.user.count({ where: { isBlocked: true } }),
     prisma.adReward.count(),
     prisma.auditLog.count({ where: { action: { startsWith: 'SUSPICIOUS:' }, createdAt: { gte: dayAgo } } }),
     prisma.user.aggregate({ _sum: { diamonds: true, rushCoins: true } }),
+    prisma.shopOrder.groupBy({ by: ['status'], _count: { _all: true } }),
   ]);
+
+  const ordersByStatus = { PENDING: 0, PROCESSING: 0, DELIVERED: 0, CANCELLED: 0 };
+  for (const g of orderGroups) ordersByStatus[g.status] = g._count._all;
 
   return {
     totalUsers,
@@ -34,6 +38,7 @@ async function getOverview() {
     suspicious24h,
     totalDiamonds: balances._sum.diamonds || 0,
     totalRushCoins: balances._sum.rushCoins || 0,
+    ordersByStatus,
   };
 }
 

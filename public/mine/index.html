@@ -28,52 +28,21 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" />
-  <link rel="stylesheet" href="mine.css?v=14" />
-  <link rel="stylesheet" href="liquid-glass.css?v=5" />
+  <link rel="stylesheet" href="mine.css?v=15" />
+  <link rel="stylesheet" href="liquid-glass.css?v=6" />
   <script src="https://sad.adsgram.ai/js/sad.min.js" defer></script>
   <style id="home-css">
-    /* Bosh sahifa: chempionat birinchi o'rinda; reklama Rush olish oynasida (mine.css tartibi bu yerda bekor qilinadi) */
-    #view-home:not([hidden]) > #heroCard { order: 1; }
-    #view-home:not([hidden]) > #homeError { order: 2; }
-    #view-home:not([hidden]) > #prizeCard { order: 3; }
-    #view-home:not([hidden]) > #progressCard { order: 4; }
-    #view-home:not([hidden]) > #joinRow { order: 5; }
-    #view-home:not([hidden]) > #coinCard { order: 7; }
-    .join-btn { height: 54px; border-radius: 18px; font-size: 15px; font-weight: 800; letter-spacing: .01em; }
+    /* Bosh sahifa tartibi: balanslar -> xato (bo'lsa) -> vazifalar kartasi -> do'kon preview */
+    #view-home:not([hidden]) > #homeError { order: 1; }
+    #view-home:not([hidden]) > #homeBalances { order: 2; }
+    #view-home:not([hidden]) > #coinCard { order: 3; }
+    #view-home:not([hidden]) > #homeShop { order: 4; }
     .rush-open { margin-top: 12px; height: 46px; border-radius: 15px; color: var(--text);
       background: color-mix(in srgb, var(--gold) 14%, var(--card-2)); border-color: color-mix(in srgb, var(--gold) 38%, var(--line)); }
     .rush-bal { display: flex; align-items: baseline; gap: 8px; margin: 0 0 14px; }
     .rush-bal b { font-size: 30px; font-weight: 700; letter-spacing: -.04em; font-variant-numeric: tabular-nums; color: var(--text); }
-    .rush-ad { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px; border-radius: 18px;
-      background: var(--card); border: 1px solid var(--line); box-shadow: inset 0 1px 0 var(--inset); }
-    .rush-ad > div { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
-    .rush-ad b { font-size: 15px; font-weight: 700; }
-    .rush-ad .muted { font-size: 12.5px; }
     /* Navbar indikatori chekkadan chiqib ketmasligi uchun: prujinasiz (overshoot yo'q) silliq harakat */
     .nav-ind { transition: transform .5s var(--soft), width .35s var(--ease), scale .16s linear, box-shadow .3s, background .3s; }
-    .quick-ad { position: relative; flex: none; height: 38px; min-width: 64px; padding: 0 13px 0 8px; border-radius: 999px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; cursor: pointer; overflow: hidden; isolation: isolate;
-      color: #fff; border: 1px solid rgba(190, 235, 255, .55);
-      background: linear-gradient(160deg, rgba(150, 220, 255, .55) 0%, rgba(70, 170, 255, .30) 55%, rgba(120, 200, 255, .42) 100%);
-      -webkit-backdrop-filter: blur(14px) saturate(180%); backdrop-filter: blur(14px) saturate(180%);
-      box-shadow: 0 6px 18px rgba(60, 160, 255, .38), 0 0 0 1px rgba(120, 200, 255, .18),
-        inset 0 1.5px 0 rgba(255, 255, 255, .85), inset 0 -8px 14px rgba(40, 140, 255, .28), inset 0 0 12px rgba(190, 235, 255, .22);
-      transition: transform .15s ease, opacity .2s, filter .2s, box-shadow .2s; }
-    .quick-ad::after { content: ""; position: absolute; left: 8%; right: 8%; top: 1px; height: 46%; border-radius: 999px; z-index: -1; pointer-events: none;
-      background: linear-gradient(180deg, rgba(255, 255, 255, .6), rgba(255, 255, 255, .04)); }
-    .quick-ad::before { content: ""; position: absolute; top: 0; bottom: 0; left: -60%; width: 38%; z-index: -1; transform: skewX(-20deg);
-      background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .7), transparent); animation: qaShine 3.4s ease-in-out infinite; }
-    .quick-ad i { display: grid; place-items: center; width: 24px; height: 24px; flex: none; font-style: normal; filter: drop-shadow(0 1px 2px rgba(10, 80, 170, .5)); }
-    .quick-ad i svg { width: 24px; height: 24px; display: block; }
-    .quick-ad b { font-size: 14px; font-weight: 800; letter-spacing: .2px; line-height: 1; font-variant-numeric: tabular-nums; text-shadow: 0 1px 3px rgba(10, 70, 160, .6); }
-    .quick-ad:not(:disabled) { animation: qaGlow 2.6s ease-in-out infinite; }
-    .quick-ad:active:not(:disabled) { transform: scale(.93); }
-    .quick-ad:disabled { opacity: .55; filter: saturate(.5); cursor: default; box-shadow: inset 0 1px 0 rgba(255, 255, 255, .5); }
-    .quick-ad:disabled::before { animation: none; opacity: 0; }
-    .quick-ad.busy { animation: bump .9s var(--ease) infinite; }
-    :root[data-theme="light"] .quick-ad { border-color: rgba(255, 255, 255, .9); background: linear-gradient(160deg, rgba(120, 205, 255, .75), rgba(60, 160, 255, .5)); }
-    @keyframes qaShine { 0%, 55% { left: -60%; } 100% { left: 130%; } }
-    @keyframes qaGlow { 50% { box-shadow: 0 6px 24px rgba(80, 180, 255, .65), 0 0 0 1px rgba(150, 215, 255, .3), inset 0 1.5px 0 rgba(255, 255, 255, .85), inset 0 -8px 14px rgba(40, 140, 255, .28), inset 0 0 12px rgba(190, 235, 255, .3); } }
-    @media (prefers-reduced-motion: reduce) { .quick-ad, .quick-ad::before { animation: none !important; } }
     #view-tasks .cta-wrap { margin: 14px 0 4px; }
     #view-tasks .msg { margin-top: 8px; }
     .task { display: flex; flex-direction: column; gap: 10px; }
@@ -82,6 +51,26 @@
     .task-head b { font-size: 15px; font-weight: 700; }
     .task-head .muted { font-size: 12.5px; }
     .task .btn { height: 44px; border-radius: 14px; }
+    .conv-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+    .conv-row input { flex: 1 1 100%; min-width: 0; font: inherit; color: var(--text); background: var(--field); border: 1px solid var(--line); border-radius: 14px; padding: 13px 14px; outline: none; font-variant-numeric: tabular-nums; }
+    .conv-row input:focus { border-color: var(--primary); box-shadow: 0 0 0 3px var(--glow); }
+    .conv-row .btn.sm { flex: 1 1 0; height: 40px; padding: 9px 10px; }
+    .shop-card { display: flex; gap: 12px; align-items: stretch; }
+    .shop-img { flex: none; width: 76px; height: 76px; border-radius: 14px; overflow: hidden; display: grid; place-items: center; font-size: 28px; background: var(--card-2); }
+    .shop-img img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .shop-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+    .shop-info b { font-size: 15px; }
+    .shop-info .muted { font-size: 12.5px; overflow-wrap: anywhere; }
+    .shop-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: auto; }
+    .shop-price { font-weight: 800; font-variant-numeric: tabular-nums; }
+    .shop-card + .shop-card { margin-top: 0; }
+    .ord-status { font-size: 12.5px; font-weight: 700; }
+    .ord-status.DELIVERED { color: var(--good, #2fbf71); } .ord-status.CANCELLED { color: var(--bad, #e5484d); }
+    .ord-proof { display: block; max-width: 100%; max-height: 160px; border-radius: 12px; margin-top: 6px; }
+    .shop-mini { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 0; }
+    .shop-mini + .shop-mini { border-top: 1px solid var(--line); }
+    .shop-mini .name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+    .shop-mini .val { flex: none; font-variant-numeric: tabular-nums; font-weight: 700; }
   </style>
   <style id="splash-css">
     html.splashing,html.splashing body{overflow:hidden;height:100%}
@@ -162,15 +151,15 @@
       <div class="sp-burst"><i style="--bx:96px;--by:-70px"></i><i style="--bx:-100px;--by:-60px"></i><i style="--bx:70px;--by:86px"></i><i style="--bx:-84px;--by:80px"></i><i style="--bx:10px;--by:-112px"></i><i style="--bx:118px;--by:8px"></i><i style="--bx:-122px;--by:-6px"></i><i style="--bx:40px;--by:-100px"></i><i style="--bx:-50px;--by:104px"></i><i style="--bx:0px;--by:118px"></i></div>
     </div>
     <div class="sp-title" aria-hidden="true">Ad<b>Rush</b></div>
-    <div class="sp-pill" aria-hidden="true" data-i18n="splash.pill">OYLIK CHEMPIONATLAR</div>
+    <div class="sp-pill" aria-hidden="true" data-i18n="splash.pill">OLMOS · RUSH COIN · DO‘KON</div>
     <div class="sp-bar" aria-hidden="true"><i id="spBar"></i></div>
     <div class="sp-status" id="spStatus" data-i18n="splash.s1">Telegram bilan ulanmoqda…</div>
-    <div class="sp-tag" aria-hidden="true" data-i18n="splash.tag">Chempionatlar · Reyting · Sovrinlar</div>
+    <div class="sp-tag" aria-hidden="true" data-i18n="splash.tag">Reklama ko‘ring · Olmos to‘plang · Do‘kondan oling</div>
   </div>
 
   <header class="top">
     <div class="brand"><img class="logo" src="/assets/Logo.png" alt="" width="28" height="28" onerror="this.remove()" /><b>AdRush</b></div>
-    <div class="top-r"><button type="button" id="quickAd" class="quick-ad" title="Reklama ko‘rib Rush olish" aria-label="Reklama ko‘rib Rush olish" data-i18n-title="top.quick_ad" data-i18n-aria="top.quick_ad" disabled><i aria-hidden="true"><svg viewBox="0 0 24 24"><defs><radialGradient id="qcg" cx="35%" cy="30%" r="80%"><stop offset="0" stop-color="#ffffff"/><stop offset=".55" stop-color="#9fdcff"/><stop offset="1" stop-color="#2f8dff"/></radialGradient></defs><circle cx="12" cy="12" r="10.5" fill="url(#qcg)" stroke="#e6f6ff" stroke-width="1.2"/><circle cx="12" cy="12" r="7.4" fill="none" stroke="#ffffff" stroke-opacity=".7" stroke-width="1"/><path d="M12 7.2l1.3 3.2 3.4.3-2.6 2.2.8 3.3L12 14.4 9.1 16.2l.8-3.3-2.6-2.2 3.4-.3z" fill="#ffffff" fill-opacity=".85"/></svg></i><b id="quickAdReward">+5</b></button><div class="chip coin-chip" id="topCoinChip" title="Rush Coin balansi" data-i18n-title="top.coin_title">💰 <b id="topCoins">0</b></div><div class="chip" id="period">—</div></div>
+    <div class="top-r"><div class="chip coin-chip" id="topDiamondChip" title="Olmos balansi" data-i18n-title="top.diamond_title">💎 <b id="topDiamonds">0</b></div><div class="chip coin-chip" id="topCoinChip" title="Rush Coin balansi" data-i18n-title="top.coin_title">🪙 <b id="topCoins">0</b></div></div>
   </header>
 
   <main class="wrap" id="app">
@@ -199,43 +188,6 @@
 
     <!-- HOME -->
     <section class="view" id="view-home" data-view="home">
-      <div class="card hero" id="heroCard">
-        <div class="atmo" aria-hidden="true">
-          <div class="night">
-            <i class="aur a1"></i><i class="aur a2"></i>
-            <i class="st s1"></i><i class="st s2"></i><i class="st s3"></i><i class="st s4"></i><i class="st s5"></i>
-            <i class="st s6"></i><i class="st s7"></i><i class="st s8"></i><i class="st s9"></i><i class="st s10"></i>
-          </div>
-          <div class="day"><i class="sunglow"></i><i class="glint"></i></div>
-        </div>
-        <div class="sk-group" id="heroSk" aria-hidden="true">
-          <div class="sk sk-line w40"></div>
-          <div class="sk sk-title w70"></div>
-          <div class="sk-grid4"><div class="sk sk-box"></div><div class="sk sk-box"></div><div class="sk sk-box"></div><div class="sk sk-box"></div></div>
-        </div>
-        <div id="heroBody" hidden>
-          <div class="hrow">
-            <span class="muted" data-i18n="home.current">🏆 Faol chempionat</span>
-            <span class="live" id="livePill" hidden><i></i>LIVE</span>
-          </div>
-          <h1 id="compTitle" data-i18n="home.comp_default">AdRush chempionati</h1>
-          <p class="muted desc" id="compDesc" hidden></p>
-          <div class="empty-inline" id="noComp" hidden>
-            <div class="big">⏳</div>
-            <b data-i18n="home.no_comp">Hozircha faol chempionat yo‘q</b>
-            <span class="muted" data-i18n="home.no_comp_hint">Yangi chempionat tez orada e’lon qilinadi.</span>
-          </div>
-          <div class="muted center cd-cap" id="cdCaption" data-i18n="cd.until_end">Tugashiga qoldi</div>
-          <div class="countdown" id="countdown" aria-label="Qolgan vaqt" data-i18n-aria="cd.aria">
-            <div><b id="cdD">--</b><span data-i18n="cd.d">kun</span></div>
-            <div><b id="cdH">--</b><span data-i18n="cd.h">soat</span></div>
-            <div><b id="cdM">--</b><span data-i18n="cd.m">daqiqa</span></div>
-            <div><b id="cdS">--</b><span data-i18n="cd.s">soniya</span></div>
-          </div>
-          <div class="muted center" id="participants"></div>
-        </div>
-      </div>
-
       <div class="state" id="homeError" hidden>
         <div class="state-ico">📡</div>
         <b data-i18n="err.load">Ma’lumotni yuklab bo‘lmadi</b>
@@ -243,152 +195,79 @@
         <button class="btn" type="button" id="homeRetry" data-i18n="common.retry">Qayta urinish</button>
       </div>
 
-      <div class="card" id="prizeCard">
-        <div class="card-head"><b data-i18n="champs.main">🏆 Chempionatlar</b><button class="link" type="button" data-go="rewards" data-i18n="common.all">Hammasi →</button></div>
-        <div id="homeChamps"><div class="sk-group"><div class="sk sk-row"></div><div class="sk sk-row"></div><div class="sk sk-row"></div></div></div>
-      </div>
-
-      <div class="card progress" id="progressCard" hidden>
-        <div class="stats">
-          <div class="stat"><span class="muted"><span data-i18n="home.my_rank">Mening o‘rnim</span><em class="rdelta" id="homeRankDelta" aria-hidden="true"></em></span><b id="homeRank">—</b></div>
-          <div class="stat"><span class="muted" data-i18n="home.staked">Tikilgan Rush Coin</span><b id="homeAds">0</b></div>
-        </div>
-        <div class="bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" id="homeBar"><i id="homeBarFill"></i></div>
-        <div class="muted" id="homeNext" data-i18n="home.join_hint">Reytingga kirish uchun chempionatga tiking</div>
-      </div>
-
-      <div class="home-join" id="joinRow">
-        <button id="joinBtn" class="btn block join-btn" type="button" data-i18n="join.btn">🎯 CHEMPIONATGA KIRISH</button>
+      <div class="grid2" id="homeBalances">
+        <div class="card stat"><span class="muted" data-i18n="home.diamonds">💎 Olmos</span><b id="homeDiamonds">0</b></div>
+        <div class="card stat"><span class="muted" data-i18n="home.coins">🪙 Rush Coin</span><b id="homeCoins">0</b></div>
       </div>
 
       <div class="card coin" id="coinCard">
         <div class="coin-top">
-          <div><span class="muted">🪙 Rush Coin</span><b class="coin-bal" id="coinBal">0</b></div>
+          <div><span class="muted" id="homeRate">1 💎 = 12 🪙</span></div>
           <button class="link" type="button" data-go="profile" data-i18n="common.history_arrow">Tarix →</button>
         </div>
-        <div class="muted" id="coinHint" data-i18n="coin.hint">Chempionatlarda qatnashish uchun Rush Coin’dan foydalaning.</div>
-        <button id="rushOpen" class="btn sec block rush-open" type="button" data-go="tasks" data-i18n="rush.get">✅ VAZIFALAR · RUSH OLISH</button>
-        <button class="link coin-ref" type="button" data-go="profile" id="homeRef" data-i18n="coin.ref" data-i18n-vars='{"n":20}'>👥 Do‘st taklif qilish +20 Rush</button>
+        <div class="muted" id="homeTasksHint">—</div>
+        <button id="rushOpen" class="btn block rush-open" type="button" data-go="tasks" data-i18n="home.tasks_btn">✅ VAZIFALAR · OLMOS OLISH</button>
+        <button class="link coin-ref" type="button" data-go="tasks" id="homeRef">👥 Do‘st taklif qilish +5 💎</button>
+      </div>
+
+      <div class="card" id="homeShop" hidden>
+        <div class="card-head"><b data-i18n="home.shop_title">🛍 Do‘kon</b><button class="link" type="button" data-go="shop" data-i18n="home.shop_all">Hammasi →</button></div>
+        <div id="homeShopList"></div>
       </div>
     </section>
 
-    <!-- TASKS: vazifalar; AdsGram rewarded reklama joyi shu sahifada -->
+    <!-- TASKS: reklama (+1 💎), referal (+5 💎), olmos -> Rush Coin almashtirish -->
     <section class="view" id="view-tasks" data-view="tasks" hidden>
       <div class="hrow"><h2 data-i18n="tasks.title">✅ Vazifalar</h2></div>
-      <p class="muted" data-i18n="tasks.note">Vazifalarni bajaring va Rush Coin oling. Reklama ixtiyoriy — Rush Coin’ni do‘st taklif qilib ham olish mumkin.</p>
-      <div class="card">
-        <div class="rush-bal"><span class="muted" data-i18n="rush.balance">Balans</span><b id="rushBal">0</b><span class="muted">Rush</span></div>
+      <p class="muted" data-i18n="tasks.note">Reklama ko‘ring va olmos oling, so‘ng olmosni Rush Coin’ga almashtiring.</p>
+      <div class="grid2">
+        <div class="card stat"><span class="muted" data-i18n="home.diamonds">💎 Olmos</span><b id="tasksDiamonds">0</b></div>
+        <div class="card stat"><span class="muted" data-i18n="home.coins">🪙 Rush Coin</span><b id="tasksCoins">0</b></div>
       </div>
 
       <div class="card task" id="taskAd">
         <div class="task-head">
-          <div><b data-i18n="rush.ad_title">📺 Rewarded reklama</b><span class="muted" data-i18n="rush.ad_hint">Reklamani oxirigacha ko‘ring — server tasdiqlagach Rush Coin beriladi.</span></div>
-          <span class="chip-sm" id="rushAdReward">+5</span>
+          <div><b data-i18n="tasks.ad_title">📺 Rewarded reklama</b><span class="muted" data-i18n="tasks.ad_hint">Reklamani oxirigacha ko‘ring — server tasdiqlagach olmos beriladi.</span></div>
+          <span class="chip-sm" id="adReward">+1 💎</span>
         </div>
         <div class="cta-wrap">
           <button id="watch" class="cta" type="button" disabled><span id="watchLabel" data-i18n="watch.loading">Yuklanmoqda…</span></button>
-          <span class="plus" id="plusOne" aria-hidden="true">+5</span>
+          <span class="plus" id="plusOne" aria-hidden="true">+1 💎</span>
         </div>
         <p id="msg" class="msg center" role="status" aria-live="polite"></p>
       </div>
 
       <div class="card task" id="taskRef">
         <div class="task-head">
-          <div><b data-i18n="tasks.ref_title">👥 Do‘st taklif qilish</b><span class="muted" data-i18n="tasks.ref_hint">Havolangiz orqali kirgan har bir yangi do‘st uchun Rush Coin olasiz.</span></div>
-          <span class="chip-sm" id="taskRefReward">+20</span>
+          <div><b data-i18n="tasks.ref_title">👥 Do‘st taklif qilish</b><span class="muted" data-i18n="tasks.ref_hint">Havolangiz orqali kirgan har bir yangi do‘st uchun olmos olasiz.</span></div>
+          <span class="chip-sm" id="taskRefReward">+5 💎</span>
         </div>
         <button class="btn sec block" type="button" data-go="profile" data-i18n="tasks.ref_btn">Havolani olish →</button>
       </div>
 
-      <div class="card task" id="taskJoin">
+      <div class="card task" id="taskConvert">
         <div class="task-head">
-          <div><b data-i18n="tasks.join_title">🏆 Chempionatda qatnashish</b><span class="muted" data-i18n="tasks.join_hint">Rush Coin tikib reytingda ko‘tariling va oylik sovrinlar uchun kurashing.</span></div>
+          <div><b data-i18n="tasks.conv_title">💎 → 🪙 almashtirish</b><span class="muted" data-i18n="tasks.conv_hint">Olmosni Rush Coin’ga almashtiring. Kurs serverda belgilanadi.</span></div>
+          <span class="chip-sm" id="convRate">1 💎 = 12 🪙</span>
         </div>
-        <button class="btn sec block" type="button" data-go="rewards" data-i18n="tasks.join_btn">Chempionatga o‘tish →</button>
+        <div class="conv-row">
+          <input id="convAmount" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="9" placeholder="Olmos miqdori" autocomplete="off" aria-label="Almashtiriladigan olmos miqdori" data-i18n-placeholder="tasks.conv_ph" data-i18n-aria="tasks.conv_aria" />
+          <button type="button" class="btn sec sm" id="convMax">MAX</button>
+        </div>
+        <div class="muted center" id="convPreview" aria-live="polite"></div>
+        <button id="convBtn" class="btn block" type="button" disabled data-i18n="tasks.conv_btn">🔄 Almashtirish</button>
+        <p id="convMsg" class="msg center" role="status" aria-live="polite"></p>
       </div>
     </section>
 
-    <!-- CHAMPIONSHIP DETAIL: chempionat ustiga bosilganda; tikish va tikkanlar shu yerda -->
-    <section class="view" id="view-champ" data-view="champ" hidden>
-      <div class="card champ-head">
-        <div class="hrow">
-          <span class="cc-badge" id="chBadge"></span>
-          <span class="live" id="chLive" hidden><i></i>LIVE</span>
-        </div>
-        <h1 id="chTitle"></h1>
-        <p class="muted desc" id="chDesc" hidden></p>
-        <div class="muted center cd-cap" id="chCap"></div>
-        <div class="countdown" id="chCountdown" aria-label="Qolgan vaqt" data-i18n-aria="cd.aria">
-          <div><b id="chD">--</b><span data-i18n="cd.d">kun</span></div>
-          <div><b id="chH">--</b><span data-i18n="cd.h">soat</span></div>
-          <div><b id="chM">--</b><span data-i18n="cd.m">daqiqa</span></div>
-          <div><b id="chS">--</b><span data-i18n="cd.s">soniya</span></div>
-        </div>
-        <div class="muted center ch-prize" id="chPrize"></div>
-        <div class="muted center ch-dates" id="chDates"></div>
-      </div>
-
-      <div class="card bet" id="betCard">
-        <div class="card-head"><b data-i18n="bet.title">🎯 Chempionatga tikish</b><span class="chip-sm" id="betSlots">0/5</span></div>
-        <p class="muted bet-target" id="betTarget"></p>
-        <div class="bet-row">
-          <input id="betAmount" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="9" placeholder="Rush Coin miqdori" autocomplete="off" aria-label="Tikish miqdori" data-i18n-placeholder="bet.placeholder" data-i18n-aria="bet.aria" />
-          <button type="button" class="btn sec sm" data-chip="10">10</button>
-          <button type="button" class="btn sec sm" data-chip="25">25</button>
-          <button type="button" class="btn sec sm" data-chip="50">50</button>
-          <button type="button" class="btn sec sm" data-chip="max">MAX</button>
-        </div>
-        <button id="betBtn" class="btn block" type="button" disabled data-i18n="bet.btn">🎯 Tikish</button>
-        <p class="muted" id="betNote"></p>
-        <p id="betMsg" class="msg" role="status" aria-live="polite"></p>
-      </div>
-
-      <div class="card" id="chBoardCard">
-        <div class="card-head"><b data-i18n="ch.board_title">👥 Tikkanlar</b><span class="chip-sm" id="chCount">0</span></div>
-        <p class="muted" data-i18n="ch.board_note">Shu chempionatga Rush Coin tikkanlar. Tartib tikilgan miqdor bo‘yicha.</p>
-        <div id="chBoard"><div class="sk-group"><div class="sk sk-row"></div><div class="sk sk-row"></div><div class="sk sk-row"></div></div></div>
-      </div>
-      <div class="card me-card" id="chMe" hidden></div>
-    </section>
-
-    <!-- LEADERBOARD -->
-    <section class="view" id="view-leaderboard" data-view="leaderboard" hidden>
-      <div class="hrow"><h2 data-i18n="lb.title">🏆 Reyting</h2><span class="live" id="lbLive" hidden><i></i>LIVE</span></div>
-      <div class="lbchips" id="lbChamps" role="tablist" hidden></div>
-      <p class="muted" id="lbPeriod"></p>
-      <p class="muted" data-i18n="lb.note">Reyting chempionatga tikilgan Rush Coin bo‘yicha.</p>
-      <div id="podium" class="podium" hidden></div>
-      <div class="card" id="board" aria-live="polite"><div class="sk-group"><div class="sk sk-row"></div><div class="sk sk-row"></div><div class="sk sk-row"></div><div class="sk sk-row"></div><div class="sk sk-row"></div></div></div>
-      <div class="card me-card" id="lbMe" hidden></div>
-    </section>
-
-    <!-- REWARDS -->
-    <section class="view" id="view-rewards" data-view="rewards" hidden>
-      <div class="ctabs" id="champTabs" role="tablist">
-        <span class="ctab-ind" id="champInd" aria-hidden="true"></span>
-        <button type="button" class="ctab active" role="tab" aria-selected="true" data-ctab="current" data-i18n="championship.current">🏆 Joriy</button>
-        <button type="button" class="ctab" role="tab" aria-selected="false" data-ctab="history" data-i18n="championship.history">📜 Tarix</button>
-      </div>
-
-      <div class="ctab-pane" id="ctab-current" role="tabpanel">
-      <h2 data-i18n="champs.title">🏆 Chempionatlar</h2>
-      <p class="muted" data-i18n="champs.intro">Bir vaqtda bir nechta chempionat o‘tadi. Birini tanlang, unga Rush Coin tikib TOP o‘rinlar uchun kurashing.</p>
-      <div id="champList"><div class="card"><div class="sk-group"><div class="sk sk-row tall"></div><div class="sk sk-row tall"></div></div></div></div>
-      <div class="card rules">
-        <b data-i18n="rules.title">📜 Qoidalar</b>
-        <ol>
-          <li data-i18n="rules.1">Faqat server tasdiqlagan valid AdsGram reklamasi Rush Coin beradi (1 ta reklama = +5).</li>
-          <li data-i18n="rules.2">Bir reklama ikki marta hisoblanmaydi.</li>
-          <li data-i18n="rules.3">Rush Coin chempionatga faqat o‘zingiz xohlaganingizda tikiladi — avtomatik tikilmaydi.</li>
-          <li data-i18n="rules.4">Har bir chempionatda bir vaqtda ko‘pi bilan 5 ta faol tikish. Yutqazsangiz tikilgan summaning 30% i qaytariladi.</li>
-          <li data-i18n="rules.5">Fake va spam faollik taqiqlanadi; shubhali faollik tekshirilishi va akkaunt cheklanishi mumkin.</li>
-          <li data-i18n="rules.6">Chempionat tugaganda TOP o‘rinlar aniqlanadi va g‘oliblar bilan bog‘lanamiz.</li>
-        </ol>
-      </div>
-      </div>
-
-      <div class="ctab-pane" id="ctab-history" role="tabpanel" hidden>
-        <div id="champHistory"></div>
+    <!-- SHOP: mahsulotlar (admin qo'shadi) + buyurtmalarim -->
+    <section class="view" id="view-shop" data-view="shop" hidden>
+      <div class="hrow"><h2 data-i18n="shop.title">🛍 Do‘kon</h2></div>
+      <div id="shopList"></div>
+      <div class="card">
+        <div class="card-head"><b data-i18n="shop.orders_title">📦 Buyurtmalarim</b></div>
+        <div id="shopOrders"></div>
+        <button class="btn sec sm block" type="button" id="shopOrdersMore" hidden data-i18n="shop.more">Yana yuklash</button>
       </div>
     </section>
 
@@ -411,23 +290,17 @@
         </div>
       </div>
       <div class="grid2">
-        <div class="card stat"><span class="muted" data-i18n="profile.rank">Reyting</span><b id="pRank">—</b></div>
-        <div class="card stat"><span class="muted" data-i18n="home.staked">Tikilgan Rush Coin</span><b id="pAds">0</b></div>
+        <div class="card stat"><span class="muted" data-i18n="profile.diamonds">💎 Olmos</span><b id="pDiamonds">0</b></div>
+        <div class="card stat"><span class="muted" data-i18n="profile.coins">🪙 Rush Coin</span><b id="pCoins">0</b></div>
       </div>
       <div class="grid2">
-        <div class="card stat"><span class="muted">💰 Rush Coin</span><b id="pCoins">0</b></div>
         <div class="card stat"><span class="muted" data-i18n="profile.valid_ads">📺 Valid reklama</span><b id="pAdsWatched">0</b></div>
       </div>
-      <div class="card">
-        <div class="muted" data-i18n="profile.next">Keyingi o‘ringacha</div>
-        <b id="pNext">—</b>
-        <div class="bar thin"><i id="pBarFill"></i></div>
-      </div>
       <div class="card ref" id="refCard">
-        <div class="card-head"><b data-i18n="ref.title">👥 Referallar</b><span class="chip-sm" id="refReward">+20</span></div>
+        <div class="card-head"><b data-i18n="ref.title">👥 Referallar</b><span class="chip-sm" id="refReward">+5 💎</span></div>
         <div class="grid2 ref-stats">
           <div class="stat"><span class="muted" data-i18n="ref.invited">👤 Taklif qilganlar</span><b id="refInvited">0</b></div>
-          <div class="stat"><span class="muted" data-i18n="ref.earned">💰 Referal orqali</span><b id="refEarned">+0</b></div>
+          <div class="stat"><span class="muted" data-i18n="ref.earned">💰 Referal orqali</span><b id="refEarned">+0 💎</b></div>
         </div>
         <div class="ref-link muted" id="refLink">—</div>
         <div class="btns">
@@ -436,10 +309,9 @@
         </div>
         <p class="muted" id="refHint" data-i18n="ref.hint">Do‘stingiz havola orqali botga birinchi marta kirsa, sizga Rush Coin beriladi.</p>
       </div>
-      <div class="card" id="pComp" hidden>
-        <div class="muted" data-i18n="home.current">Joriy chempionat</div>
-        <b id="pCompTitle">—</b>
-        <div class="muted" id="pCompEnds"></div>
+      <div class="card">
+        <div class="card-head"><b data-i18n="profile.orders_title">📦 Buyurtmalarim</b><button class="link" type="button" data-go="shop" data-i18n="home.shop_all">Hammasi →</button></div>
+        <div id="profOrders"></div>
       </div>
       <div class="card" id="sendCard">
         <button type="button" class="btn block" id="sendOpen" data-go="send" data-i18n="send.open">💸 Tanga yuborish</button>
@@ -477,14 +349,13 @@
     <span class="nav-ind" id="navInd" aria-hidden="true"></span>
     <button type="button" class="tab active" data-go="home" aria-current="page"><i><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8"/><path d="M3 10a2 2 0 0 1 .709-1.528l7-5.999a2 2 0 0 1 2.582 0l7 5.999A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg></i><span data-i18n="nav.home">Home</span></button>
     <button type="button" class="tab" data-go="tasks"><i><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 17 2 2 4-4"/><path d="m3 7 2 2 4-4"/><path d="M13 6h8"/><path d="M13 12h8"/><path d="M13 18h8"/></svg></i><span data-i18n="nav.tasks">Vazifalar</span></button>
-    <button type="button" class="tab" data-go="leaderboard"><i><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/></svg></i><span data-i18n="nav.leaderboard">Reyting</span></button>
-    <button type="button" class="tab" data-go="rewards"><i><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7.21 15 2.66 7.14a2 2 0 0 1 .13-2.2L4.4 2.8A2 2 0 0 1 6 2h12a2 2 0 0 1 1.6.8l1.6 2.14a2 2 0 0 1 .14 2.2L16.79 15"/><path d="M11 12 5.12 2.2"/><path d="m13 12 5.88-9.8"/><path d="M8 7h8"/><circle cx="12" cy="17" r="5"/><path d="M12 18v-2h-.5"/></svg></i><span data-i18n="nav.rewards">Chempionat</span></button>
+    <button type="button" class="tab" data-go="shop"><i><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/></svg></i><span data-i18n="nav.shop">Do‘kon</span></button>
     <button type="button" class="tab" data-go="profile"><i><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></i><span data-i18n="nav.profile">Profil</span></button>
   </nav>
 
   <script src="i18n.js?v=11"></script>
-  <script src="mine.js?v=20"></script>
-  <script src="liquid-glass.js?v=5"></script>
+  <script src="mine.js?v=21"></script>
+  <script src="liquid-glass.js?v=6"></script>
   <script>
     /* Splash: ilova tayyor bo'lguncha (kamida 1.6s, ko'pi bilan 9s) bot animatsiyasi ko'rsatiladi */
     (function () {

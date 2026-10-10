@@ -1,5 +1,5 @@
 /* AdRush — Liquid Glass runtime v4. mine.js'ga tegmaydi: faqat CSS o'zgaruvchilari, qo'shimcha qatlamlar va class'larni boshqaradi.
-   Glass faqat controls qatlamida (tab bar, chip, me-card, toast, CTA); content plitalari shishasiz. */
+   Glass faqat controls qatlamida (tab bar, chip, toast, CTA); content plitalari shishasiz. */
 (function () {
   'use strict';
   var root = document.documentElement, body = document.body;
@@ -115,7 +115,7 @@
     }, { passive: true });
   }
 
-  /* 5. Kontekstga moslashuvchan kontrast: kichik element (tab bar) ostidagi kontent yorqinligiga qarab light/dark almashadi. Katta elementlar (sheet, me-card) almashmaydi */
+  /* 5. Kontekstga moslashuvchan kontrast: kichik element (tab bar) ostidagi kontent yorqinligiga qarab light/dark almashadi. Katta elementlar (sheet) almashmaydi */
   function lum(cs) {
     var m = /rgba?\(([\d.]+)[, ]+([\d.]+)[, ]+([\d.]+)(?:[,/ ]+([\d.]+))?/.exec(cs);
     if (!m) return null;
@@ -144,7 +144,7 @@
   req();
 
   /* 6. Specular: barmoq/kursor ostida yorug'lik dog'i (--mx/--my/--lit), faqat controls'da */
-  var SEL = '.cta,.chip,.tab,.nav,.me-card'; // faqat glass elementlar: content plitalarida yorug'lik dog'i yo'q
+  var SEL = '.cta,.chip,.tab,.nav'; // faqat glass elementlar: content plitalarida yorug'lik dog'i yo'q
   function spec(e, on) {
     var t = e.target && e.target.closest && e.target.closest(SEL);
     if (!t) return;
@@ -177,7 +177,7 @@
       if (!raf && !ind.classList.contains('dragging')) { lastC = null; still = 0; raf = requestAnimationFrame(step); }
     }).observe(ind, { attributes: true, attributeFilter: ['style'] });
   }
-  morph(navInd); morph($('champInd'));
+  morph(navInd);
 
   /* 8. Faol tab (bubble) ustidan bosib sudrash: tab'lar bubble ustida turgani uchun hodisani indikatorga uzatamiz */
   if (nav && navInd) {

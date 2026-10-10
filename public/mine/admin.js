@@ -8,22 +8,26 @@
 (function () {
   const A = window.AdRush;
   if (!A) return;
-  const { api, nf, tg, toast, confirmBox, prizeThumb, placeLabel, stateNode, skeleton, setBack, setNum } = A;
+  const { api, nf, tg, toast, confirmBox, stateNode, skeleton, setBack, setNum } = A;
 
   const STATUS_UZ = {
-    DRAFT: 'Qoralama', ACTIVE: 'Faol', ENDED: 'Tugagan', ARCHIVED: 'Arxiv',
-    PENDING: 'Kutilmoqda', CONTACTED: 'Bog‘lanildi', DELIVERED: 'Topshirildi', CANCELLED: 'Bekor',
-    INACTIVE: 'Yashirin',
+    PENDING: 'Kutilmoqda', PROCESSING: 'Jarayonda', DELIVERED: 'Yetkazildi', CANCELLED: 'Bekor',
+    ACTIVE: 'Faol', INACTIVE: 'Yashirin', OUT: 'Tugagan',
   };
-  // Faqat UI uchun (server o'zi ham tekshiradi)
-  const NEXT_WINNER = {
-    PENDING: ['CONTACTED', 'CANCELLED'],
-    CONTACTED: ['DELIVERED', 'CANCELLED', 'PENDING'],
+  // Badge ranglari mavjud CSS klasslariga ulanadi (yangi CSS shart emas)
+  const BADGE_CLS = { PROCESSING: 'CONTACTED', OUT: 'CANCELLED' };
+  const ORDER_STATUSES = ['PENDING', 'PROCESSING', 'DELIVERED', 'CANCELLED'];
+  const ORDER_ICON = { PENDING: '⏳', PROCESSING: '🔧', DELIVERED: '✅', CANCELLED: '❌' };
+  const KIND_UZ = { GIFT: '🎁 Sovg‘a', STARS: '⭐ Stars', PREMIUM: '💎 Premium', CUSTOM: '📦 Boshqa' };
+  // Faqat UI uchun (server o'zi ham tekshiradi). DELIVERED / CANCELLED dan keyin holat o'zgarmaydi.
+  const NEXT_ORDER = {
+    PENDING: ['PROCESSING', 'DELIVERED', 'CANCELLED'],
+    PROCESSING: ['DELIVERED', 'CANCELLED'],
     DELIVERED: [],
-    CANCELLED: ['PENDING'],
+    CANCELLED: [],
   };
 
-  const st = { tab: 'dash', detailId: null, winnersCompId: null, root: null, body: null, token: 0, secMode: 'audit', auditKind: 'all', userQ: '' };
+  const st = { tab: 'dash', root: null, body: null, token: 0, secMode: 'audit', auditKind: 'all', userQ: '', orderStatus: 'ALL' };
 
   // ---------- Kichik DOM yordamchilari ----------
   function h(tag, attrs, ...kids) {
@@ -43,13 +47,7 @@
     return n;
   }
   const fmt = (iso) => (iso ? new Date(iso).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) : '—');
-  const pad = (n) => String(n).padStart(2, '0');
-  function toLocalInput(iso) {
-    const d = new Date(iso);
-    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-  }
-  const fromLocalInput = (v) => new Date(v).toISOString();
-  const badge = (status) => h('span', { class: 'badge ' + status, text: STATUS_UZ[status] || status });
+  const badge = (status, label) => h('span', { class: 'badge ' + (BADGE_CLS[status] || status), text: label || STATUS_UZ[status] || status });
   /** Raqam 0 dan qiymatgacha sanab chiqadi (500 ms); reduced-motion da darhol qo'yiladi. */
   function counter(tag, cls, value) {
     const n = h(tag, { class: cls, text: '0' });
@@ -58,6 +56,10 @@
     return n;
   }
   const nameOf = (u) => (u.username ? '@' + u.username : u.firstName || 'Foydalanuvchi');
+  /** Ism, @username va Telegram ID bitta qatorda. */
+  const userLine = (u) => [u.firstName, u.username ? '@' + u.username : null].filter(Boolean).join(' ') + ` • ID ${u.telegramId}`;
+  /** Mahsulot rasmi (yoki 🛍). */
+  const thumb = (url, large) => h('div', { class: 'thumb' + (large ? ' lg' : '') }, url ? h('img', { src: url, alt: '', loading: 'lazy' }) : '🛍');
 
   function msgOf(res, fallback) {
     return (res && res.data && res.data.message) || fallback || 'Xatolik. Qayta urinib ko‘ring.';
@@ -115,7 +117,7 @@
     st.root = h('section', { class: 'view', id: 'view-admin', 'data-view': 'admin', hidden: true });
     st.body = h('div', { id: 'admBody' });
     const seg = h('div', { class: 'seg', id: 'admSeg' },
-      ...[['dash', '📊 Dashboard'], ['comps', '🏁 Chempionat'], ['wins', '🏅 G‘oliblar'], ['sec', '🛡️ Xavfsizlik'], ['sub', '📢 Kanal']].map(([key, label]) =>
+      ...[['dash', '📊 Dashboard'], ['products', '🛍 Mahsulotlar'], ['orders', '📦 Buyurtmalar'], ['sec', '🛡️ Xavfsizlik'], ['sub', '📢 Kanal']].map(([key, label]) =>
         h('button', { type: 'button', 'data-tab': key, class: key === st.tab ? 'active' : '', text: label, onclick: () => setTab(key) })));
     st.root.append(h('h2', { text: '⚙️ Admin' }), seg, st.body);
     wrap.appendChild(st.root);
@@ -128,7 +130,6 @@
 
   function setTab(key) {
     st.tab = key;
-    st.detailId = null;
     document.querySelectorAll('#admSeg button').forEach((b) => b.classList.toggle('active', b.dataset.tab === key));
     render();
   }
@@ -147,30 +148,18 @@
     if (!st.body) return;
     const my = ++st.token; // eski javob yangisini bosib ketmasin
     const guard = () => my === st.token;
-    if (!(st.tab === 'comps' && st.detailId)) setBack(null);
+    setBack(null);
     if (st.tab === 'dash') return renderDash(guard);
     if (st.tab === 'sec') return renderSecurity(guard);
     if (st.tab === 'sub') return renderSubscription(guard);
-    if (st.tab === 'comps') return st.detailId ? renderDetail(st.detailId, guard) : renderList(guard);
-    return renderWinners(guard);
+    if (st.tab === 'products') return renderProducts(guard);
+    return renderOrders(guard);
   }
 
   // ---------- Dashboard ----------
-  function weekday(day) {
-    return new Date(day + 'T00:00:00Z').toLocaleDateString([], { weekday: 'short', timeZone: 'UTC' });
-  }
-
-  function barChart(daily) {
-    const max = Math.max(1, ...daily.map((x) => x.validAds));
-    const todayKey = new Date().toISOString().slice(0, 10);
-    const wrap = h('div', { class: 'bars', role: 'img', 'aria-label': 'Oxirgi 7 kunlik valid reklamalar' });
-    daily.forEach((x, i) => {
-      const pct = Math.max(4, Math.round((x.validAds / max) * 100));
-      const fill = h('div', { class: 'bfill', style: `height:${pct}%;animation-delay:${i * 40}ms`, title: `${x.day}: ${x.validAds}` });
-      wrap.appendChild(h('div', { class: 'bcol' + (x.day === todayKey ? ' today' : '') },
-        h('div', { class: 'btrack' }, fill), h('div', { class: 'bl', text: weekday(x.day) })));
-    });
-    return wrap;
+  function goOrders(status) {
+    st.orderStatus = status;
+    setTab('orders');
   }
 
   async function renderDash(guard) {
@@ -179,38 +168,15 @@
     if (!guard()) return;
     if (!ok(res)) return failed(res, render);
     const d = res.data;
-    const cur = d.current;
+    const by = d.ordersByStatus || {};
 
     const frag = document.createDocumentFragment();
 
-    // Hero: faol chempionat + 7 kunlik faollik
-    if (cur) {
-      const c = cur.competition;
-      frag.appendChild(h('div', { class: 'card adm-hero' },
-        h('div', { class: 'hrow' }, h('span', { class: 'muted', text: 'Faol chempionat' }), h('span', { class: 'live' }, h('i'), 'LIVE')),
-        h('div', { class: 'pt', style: 'font-size:17px;font-weight:700;margin-top:6px', text: c.title }),
-        counter('div', 'kpi', cur.validAds),
-        h('div', { class: 'sub', text: `valid reklama • bugun +${nf.format(cur.rewardsToday)} • ${nf.format(cur.participants)} ishtirokchi` }),
-        barChart(d.daily || []),
-        h('div', { class: 'sub', style: 'margin-top:8px', text: `${fmt(c.startAt)} → ${fmt(c.endAt)}` }),
-        h('div', { class: 'btns' },
-          h('button', { class: 'btn sec', type: 'button', text: 'Ochish', onclick: () => openDetail(c.id) }),
-          h('button', { class: 'btn danger', type: 'button', text: 'Tugatish', onclick: () => endCompetition(c) }))));
-    } else {
-      frag.appendChild(h('div', { class: 'card adm-hero' },
-        h('div', { class: 'empty-inline' },
-          h('div', { class: 'big', text: '🏁' }),
-          h('b', { text: 'Faol chempionat yo‘q' }),
-          h('span', { class: 'muted', text: 'Yangi chempionat yarating va faollashtiring.' }),
-          h('div', { class: 'btns' }, h('button', { class: 'btn', type: 'button', text: '+ Chempionat yaratish', onclick: () => { setTab('comps'); competitionForm(); } }))),
-        d.daily && d.daily.some((x) => x.validAds) ? barChart(d.daily) : null));
-    }
-
     // Diqqat talab qiladigan narsalar
-    if (d.pendingWinners) {
+    if (by.PENDING) {
       frag.appendChild(h('div', { class: 'alert' }, h('span', { text: '⏳' }),
-        h('span', { style: 'flex:1', text: `${nf.format(d.pendingWinners)} ta g‘olib bilan bog‘lanish kutilmoqda` }),
-        h('button', { class: 'btn sm sec', type: 'button', text: 'Ko‘rish', onclick: () => setTab('wins') })));
+        h('span', { style: 'flex:1', text: `${nf.format(by.PENDING)} ta buyurtma kutilmoqda` }),
+        h('button', { class: 'btn sm sec', type: 'button', text: 'Ko‘rish', onclick: () => goOrders('PENDING') })));
     }
     if (d.suspicious24h) {
       frag.appendChild(h('div', { class: 'alert bad' }, h('span', { text: '🚨' }),
@@ -223,23 +189,19 @@
     frag.appendChild(h('div', { class: 'tiles' },
       tile('👥', 'Jami foydalanuvchilar', d.totalUsers),
       tile('📺', 'Jami valid reklamalar', d.lifetimeValidAds, 'good'),
-      tile('🏃', 'Joriy ishtirokchilar', cur ? cur.participants : 0),
-      tile('🎁', 'Sovrinlar soni', cur ? cur.prizeCount : 0),
-      tile('⏳', 'Kutayotgan g‘oliblar', d.pendingWinners, d.pendingWinners ? 'warn' : ''),
+      tile('💎', 'Jami olmos (balanslarda)', d.totalDiamonds),
+      tile('🪙', 'Jami Rush Coin (balanslarda)', d.totalRushCoins),
+      tile('⏳', 'Kutilayotgan buyurtmalar', by.PENDING || 0, by.PENDING ? 'warn' : ''),
       tile('🚫', 'Bloklanganlar', d.blocked, d.blocked ? 'bad' : '')));
 
-    const top = h('div', { class: 'card' }, h('div', { class: 'card-head' }, h('b', { text: '🔥 Top o‘yinchilar' })));
-    if (cur && cur.topPlayers.length) {
-      for (const p of cur.topPlayers) {
-        top.appendChild(h('div', { class: 'row' },
-          h('span', { class: 'rk', text: p.rank <= 3 ? placeLabel(p.rank) : '#' + p.rank }),
-          h('span', { class: 'name', text: nameOf(p) }),
-          h('span', { class: 'val', text: nf.format(p.validAds) })));
-      }
-    } else {
-      top.appendChild(stateNode('🏁', 'Hozircha ishtirokchilar yo‘q'));
+    const orders = h('div', { class: 'card' }, h('div', { class: 'card-head' }, h('b', { text: '📦 Buyurtmalar holat bo‘yicha' })));
+    for (const s of ORDER_STATUSES) {
+      orders.appendChild(h('div', { class: 'row', style: 'cursor:pointer', onclick: () => goOrders(s) },
+        h('span', { class: 'rk', text: ORDER_ICON[s] }),
+        h('span', { class: 'name', text: STATUS_UZ[s] }),
+        h('span', { class: 'val', text: nf.format(by[s] || 0) })));
     }
-    frag.appendChild(top);
+    frag.appendChild(orders);
     st.body.replaceChildren(frag);
   }
 
@@ -325,18 +287,19 @@
 
   // ---------- Xavfsizlik: audit feed + foydalanuvchilar ----------
   const AUDIT_UZ = {
-    COMPETITION_CREATED: ['🏁', 'Chempionat yaratildi'], COMPETITION_UPDATED: ['✏️', 'Chempionat tahrirlandi'],
-    COMPETITION_ACTIVATED: ['▶️', 'Chempionat faollashtirildi'], COMPETITION_CLOSED: ['⏹', 'Chempionat tugatildi'],
-    COMPETITION_ARCHIVED: ['📦', 'Chempionat arxivlandi'], COMPETITION_DELETED: ['🗑', 'Qoralama o‘chirildi'],
-    PRIZE_CREATED: ['🎁', 'Sovrin qo‘shildi'], PRIZE_UPDATED: ['✏️', 'Sovrin tahrirlandi'], PRIZE_DELETED: ['🗑', 'Sovrin o‘chirildi'],
-    PRIZE_IMAGE_UPLOADED: ['🖼️', 'Sovrin rasmi yuklandi'], WINNER_STATUS_CHANGED: ['🏅', 'G‘olib holati o‘zgardi'],
+    ADMIN_SHOP_PRODUCT_CREATE: ['🛍', 'Mahsulot qo‘shildi'], ADMIN_SHOP_PRODUCT_UPDATE: ['✏️', 'Mahsulot tahrirlandi'],
+    ADMIN_SHOP_PRODUCT_DEACTIVATE: ['🙈', 'Mahsulot yashirildi'], ADMIN_SHOP_PRODUCT_DELETE: ['🗑', 'Mahsulot o‘chirildi'],
+    ADMIN_SHOP_ORDER_UPDATE: ['📦', 'Buyurtma yangilandi'], ADMIN_SHOP_ORDER_PROOF: ['🖼️', 'Isbot rasmi yuklandi'],
     USER_BLOCKED: ['🚫', 'Foydalanuvchi bloklandi'], USER_UNBLOCKED: ['✅', 'Foydalanuvchi blokdan chiqarildi'],
   };
 
   function auditRow(a) {
     const sus = a.action.startsWith('SUSPICIOUS:');
     const [ico, label] = sus ? ['🚨', 'Shubhali: ' + a.action.slice(11)] : (AUDIT_UZ[a.action] || ['📝', a.action]);
-    const extra = a.details && (a.details.reason || a.details.path || a.details.title) ? ` • ${a.details.reason || a.details.path || a.details.title}` : '';
+    const dt = a.details || {};
+    const extra = dt.from && dt.to
+      ? ` • ${STATUS_UZ[dt.from] || dt.from} → ${STATUS_UZ[dt.to] || dt.to}`
+      : (dt.reason || dt.path || dt.title ? ` • ${dt.reason || dt.path || dt.title}` : '');
     const who = a.actorTelegramId ? 'ID ' + a.actorTelegramId : 'tizim';
     return h('div', { class: 'frow' },
       h('div', { class: 'fico' + (sus ? ' sus' : ''), text: ico }),
@@ -349,7 +312,7 @@
     const act = h('button', { class: 'btn sm ' + (u.isBlocked ? 'ok' : 'danger'), type: 'button', text: u.isBlocked ? 'Ochish' : 'Bloklash' });
     act.addEventListener('click', async () => {
       const name = nameOf(u);
-      if (!u.isBlocked && !(await confirmBox(`${name} bloklansinmi? U reytingdan chiqadi va ilovaga kira olmaydi.`))) return;
+      if (!u.isBlocked && !(await confirmBox(`${name} bloklansinmi? U ilovaga kira olmaydi.`))) return;
       act.disabled = true;
       const res = await call('POST', `/users/${u.telegramId}/${u.isBlocked ? 'unblock' : 'block'}`);
       if (!ok(res)) { act.disabled = false; return toast(msgOf(res), true); }
@@ -419,192 +382,70 @@
     content.replaceChildren(kinds, card);
   }
 
-  // ---------- Competitions ----------
-  async function renderList(guard) {
+  // ---------- Mahsulotlar ----------
+  async function renderProducts(guard) {
     loading();
-    const res = await call('GET', '/competitions');
+    const res = await call('GET', '/shop/products');
     if (!guard()) return;
     if (!ok(res)) return failed(res, render);
+    const items = res.data.items || [];
 
     const frag = document.createDocumentFragment();
     frag.appendChild(h('div', { class: 'hrow' },
-      h('span', { class: 'muted', text: `Jami: ${res.data.competitions.length}` }),
-      h('button', { class: 'btn sm', type: 'button', text: '+ Yangi', onclick: () => competitionForm() })));
+      h('span', { class: 'muted', text: `Jami: ${items.length}` }),
+      h('button', { class: 'btn sm', type: 'button', text: '+ Yangi', onclick: () => productForm(null) })));
 
-    if (!res.data.competitions.length) {
+    if (!items.length) {
       frag.appendChild(h('div', { class: 'card' }, h('div', { class: 'empty-inline' },
-        h('div', { class: 'big', text: '📭' }), h('b', { text: 'Hali chempionat yo‘q' }),
-        h('span', { class: 'muted', text: 'Birinchi chempionatni yarating.' }))));
-    }
-    for (const c of res.data.competitions) {
-      frag.appendChild(h('div', { class: 'card ccard', onclick: () => openDetail(c.id) },
-        h('div', { class: 'top2' }, h('div', { class: 't', text: c.title }), badge(c.status)),
-        h('div', { class: 'muted', text: `${fmt(c.startAt)} → ${fmt(c.endAt)}` }),
-        h('div', { class: 'meta' },
-          h('span', {}, '👥 ', h('b', { text: nf.format(c.participants) })),
-          h('span', {}, '📺 ', h('b', { text: nf.format(c.validAds) })),
-          h('span', {}, '🎁 ', h('b', { text: nf.format(c.prizeCount) })),
-          c.winnerCount ? h('span', {}, '🏅 ', h('b', { text: nf.format(c.winnerCount) })) : null)));
-    }
-    st.body.replaceChildren(frag);
-  }
-
-  function openDetail(id) {
-    st.tab = 'comps';
-    st.detailId = id;
-    document.querySelectorAll('#admSeg button').forEach((b) => b.classList.toggle('active', b.dataset.tab === 'comps'));
-    A.go('admin'); // go() -> onShow() -> render()
-  }
-
-  async function renderDetail(id, guard) {
-    loading();
-    const res = await call('GET', '/competitions/' + id);
-    if (!guard()) return;
-    if (!ok(res)) return failed(res, render);
-    const { competition: c, prizes, winners } = res.data;
-    setBack(() => { st.detailId = null; render(); });
-    const editablePrizes = c.status === 'DRAFT' || c.status === 'ACTIVE';
-
-    const frag = document.createDocumentFragment();
-    frag.appendChild(h('button', { class: 'back', type: 'button', text: '← Barcha chempionatlar', onclick: () => { st.detailId = null; render(); } }));
-
-    const actions = h('div', { class: 'btns' });
-    if (c.status === 'DRAFT' || c.status === 'ACTIVE') actions.appendChild(h('button', { class: 'btn sec', type: 'button', text: '✏️ Tahrirlash', onclick: () => competitionForm(c) }));
-    if (c.status === 'DRAFT') {
-      actions.appendChild(h('button', { class: 'btn ok', type: 'button', text: '▶️ Faollashtirish', onclick: () => activateCompetition(c) }));
-      actions.appendChild(h('button', { class: 'btn danger', type: 'button', text: '🗑 O‘chirish', onclick: () => deleteCompetition(c) }));
-    }
-    if (c.status === 'ACTIVE') actions.appendChild(h('button', { class: 'btn danger', type: 'button', text: '⏹ Tugatish', onclick: () => endCompetition(c) }));
-    if (c.status === 'ENDED') actions.appendChild(h('button', { class: 'btn sec', type: 'button', text: '📦 Arxivlash', onclick: () => archiveCompetition(c) }));
-
-    frag.appendChild(h('div', { class: 'card hero' },
-      h('div', { class: 'hrow' }, h('span', { class: 'muted', text: `#${c.id}` }), badge(c.status)),
-      h('h1', { text: c.title }),
-      c.description ? h('p', { class: 'muted desc', text: c.description }) : null,
-      h('div', { class: 'muted', text: `Boshlanish: ${fmt(c.startAt)}` }),
-      h('div', { class: 'muted', text: `Tugash: ${fmt(c.endAt)}` }),
-      h('div', { class: 'meta', style: 'display:flex;gap:14px;margin-top:10px;font-size:13px' },
-        h('span', { text: `👥 ${nf.format(c.participants)}` }), h('span', { text: `📺 ${nf.format(c.validAds)}` })),
-      actions));
-
-    // Sovrinlar
-    const pcard = h('div', { class: 'card' },
-      h('div', { class: 'card-head' }, h('b', { text: '🎁 Sovrinlar' }),
-        editablePrizes ? h('button', { class: 'btn sm', type: 'button', text: '+ Sovrin', onclick: () => prizeForm(c, null, prizes) }) : null));
-    if (!prizes.length) pcard.appendChild(h('p', { class: 'muted', text: 'Sovrin qo‘shilmagan. G‘oliblar sovrin o‘rni (place) bo‘yicha aniqlanadi.' }));
-    for (const p of prizes) {
-      pcard.appendChild(h('div', { class: 'prow' },
-        prizeThumb(p),
-        h('div', { class: 'pb' },
-          h('div', { class: 'pt', text: p.title }),
-          h('div', { class: 'ps', text: `${p.place}-o‘rin${p.value ? ' • ' + p.value : ''}${p.quantity > 1 ? ' • ' + p.quantity + ' ta' : ''}` })),
-        p.status !== 'ACTIVE' ? badge(p.status) : null,
-        editablePrizes ? h('div', { class: 'acts' },
-          h('button', { class: 'btn sm sec', type: 'button', text: '✏️', 'aria-label': 'Tahrirlash', onclick: () => prizeForm(c, p, prizes) }),
-          h('button', { class: 'btn sm danger', type: 'button', text: '🗑', 'aria-label': 'O‘chirish', onclick: () => deletePrize(p) })) : null));
-    }
-    frag.appendChild(pcard);
-
-    if (c.status === 'ENDED' || c.status === 'ARCHIVED') frag.appendChild(winnersCard(winners, c));
-    st.body.replaceChildren(frag);
-  }
-
-  function winnersCard(winners, c) {
-    const card = h('div', { class: 'card' }, h('div', { class: 'card-head' }, h('b', { text: '🏅 G‘oliblar' })));
-    if (!winners.length) {
-      card.appendChild(h('p', { class: 'muted', text: 'G‘oliblar yo‘q (ishtirokchi yoki sovrin bo‘lmagan).' }));
-      return card;
-    }
-    for (const w of winners) {
-      card.appendChild(h('div', { class: 'prow' },
-        h('div', { class: 'thumb', text: placeLabel(w.place) }),
-        h('div', { class: 'pb' },
-          h('div', { class: 'pt', text: nameOf(w.user) }),
-          h('div', { class: 'ps', text: `${w.prize} • ${nf.format(w.validAds)} reklama • ID ${w.user.telegramId}` }),
-          w.note ? h('div', { class: 'note', text: w.note }) : null),
-        h('div', { class: 'acts', style: 'flex-direction:column;align-items:flex-end;gap:6px' },
-          badge(w.status),
-          h('button', { class: 'btn sm sec', type: 'button', text: 'Holat', onclick: () => winnerForm(w) }))));
-    }
-    return card;
-  }
-
-  // ---------- G'oliblar tabi ----------
-  async function renderWinners(guard) {
-    loading();
-    const list = await call('GET', '/competitions');
-    if (!guard()) return;
-    if (!ok(list)) return failed(list, render);
-    const ended = list.data.competitions.filter((c) => c.status === 'ENDED' || c.status === 'ARCHIVED');
-    if (!ended.length) {
-      st.body.replaceChildren(h('div', { class: 'card' }, h('div', { class: 'empty-inline' },
-        h('div', { class: 'big', text: '🏅' }), h('b', { text: 'Hali g‘oliblar yo‘q' }),
-        h('span', { class: 'muted', text: 'Chempionat tugagach g‘oliblar shu yerda paydo bo‘ladi.' }))));
+        h('div', { class: 'big', text: '🛍' }),
+        h('b', { text: 'Do‘konda hali mahsulot yo‘q' }),
+        h('span', { class: 'muted', text: 'Birinchi mahsulotni qo‘shing: nomi, rasmi, narxi (Rush Coin) va zaxirasi.' }),
+        h('div', { class: 'btns' }, h('button', { class: 'btn', type: 'button', text: '+ Mahsulot qo‘shish', onclick: () => productForm(null) })))));
+      st.body.replaceChildren(frag);
       return;
     }
-    if (!ended.some((c) => c.id === st.winnersCompId)) st.winnersCompId = ended[0].id;
 
-    const sel = h('select', { onchange: (e) => { st.winnersCompId = Number(e.target.value); render(); } },
-      ...ended.map((c) => h('option', { value: String(c.id), text: c.title, selected: c.id === st.winnersCompId })));
-    sel.value = String(st.winnersCompId);
-
-    const res = await call('GET', `/competitions/${st.winnersCompId}/winners`);
-    if (!guard()) return;
-    if (!ok(res)) return failed(res, render);
-    const comp = ended.find((c) => c.id === st.winnersCompId);
-    st.body.replaceChildren(field('Chempionat', sel), winnersCard(res.data.winners, comp));
+    const card = h('div', { class: 'card' });
+    for (const p of items) card.appendChild(productRow(p));
+    frag.appendChild(card);
+    st.body.replaceChildren(frag);
   }
 
-  // ---------- Formalar ----------
-  function competitionForm(c) {
-    const now = new Date();
-    now.setMinutes(0, 0, 0);
-    now.setHours(now.getHours() + 1);
-    const inMonth = new Date(now.getTime() + 30 * 24 * 3600 * 1000);
+  function productRow(p) {
+    const stockTxt = p.stock === null ? '∞' : nf.format(p.stock);
+    return h('div', { class: 'prow' },
+      thumb(p.imageUrl),
+      h('div', { class: 'pb' },
+        h('div', { class: 'pt', text: p.title }),
+        h('div', { class: 'ps', text: `${nf.format(p.priceRush)} 🪙 • ${KIND_UZ[p.kind] || p.kind} • zaxira: ${stockTxt}` }),
+        h('div', { class: 'ps', text: `${nf.format(p.ordersCount || 0)} buyurtma • tartib: ${p.sortOrder}` }),
+        !p.isActive || p.stock === 0
+          ? h('div', { style: 'display:flex;gap:6px;margin-top:6px;flex-wrap:wrap' },
+            !p.isActive ? badge('INACTIVE') : null,
+            p.stock === 0 ? badge('OUT') : null)
+          : null),
+      h('div', { class: 'acts' },
+        h('button', { class: 'btn sm sec', type: 'button', text: '✏️', 'aria-label': 'Tahrirlash', onclick: () => productForm(p) }),
+        h('button', { class: 'btn sm sec', type: 'button', text: p.isActive ? '🙈' : '👁', 'aria-label': p.isActive ? 'Yashirish' : 'Ko‘rsatish', onclick: () => toggleProduct(p) }),
+        h('button', { class: 'btn sm danger', type: 'button', text: '🗑', 'aria-label': 'O‘chirish', onclick: () => deleteProduct(p) })));
+  }
 
-    const title = h('input', { type: 'text', maxlength: '120', placeholder: 'Masalan: Oktyabr chempionati', value: c ? c.title : '' });
+  function productForm(p) {
+    const title = h('input', { type: 'text', maxlength: '120', placeholder: 'Masalan: Telegram Premium 1 oy', value: p ? p.title : '' });
     const desc = h('textarea', { maxlength: '1000', placeholder: 'Qisqa tavsif (ixtiyoriy)' });
-    desc.value = c && c.description ? c.description : '';
-    const start = h('input', { type: 'datetime-local', value: toLocalInput(c ? c.startAt : now.toISOString()) });
-    const end = h('input', { type: 'datetime-local', value: toLocalInput(c ? c.endAt : inMonth.toISOString()) });
-    const startLocked = c && c.status === 'ACTIVE' && new Date(c.startAt) <= new Date();
-    if (startLocked) start.disabled = true;
-    const err = h('p', { class: 'errtxt', role: 'alert' });
-
-    openSheet(c ? 'Chempionatni tahrirlash' : 'Yangi chempionat', (close) => {
-      const save = h('button', { class: 'btn block', type: 'button', text: 'Saqlash' });
-      save.addEventListener('click', async () => {
-        err.textContent = '';
-        if (title.value.trim().length < 3) { err.textContent = 'Nom kamida 3 belgi bo‘lsin.'; return; }
-        if (!start.value || !end.value) { err.textContent = 'Sanalarni kiriting.'; return; }
-        const body = { title: title.value.trim(), description: desc.value.trim(), endAt: fromLocalInput(end.value) };
-        if (!startLocked) body.startAt = fromLocalInput(start.value);
-        save.disabled = true;
-        const res = c ? await call('PATCH', '/competitions/' + c.id, body) : await call('POST', '/competitions', body);
-        save.disabled = false;
-        if (!ok(res)) { err.textContent = msgOf(res, 'Saqlab bo‘lmadi'); return; }
-        close();
-        toast(c ? 'Saqlandi' : 'Qoralama yaratildi');
-        if (c) render(); else openDetail(res.data.competition.id);
-      });
-      return h('div', {}, field('Nomi', title), field('Tavsif', desc),
-        h('div', { class: 'two' }, field('Boshlanish', start), field('Tugash', end)), err, save);
-    });
-  }
-
-  function prizeForm(c, p, existing) {
-    const usedPlaces = new Set(existing.filter((x) => !p || x.id !== p.id).map((x) => x.place));
-    let nextPlace = 1;
-    while (usedPlaces.has(nextPlace)) nextPlace += 1;
-
-    const place = h('input', { type: 'number', min: '1', max: '100', inputmode: 'numeric', value: String(p ? p.place : nextPlace) });
-    const qty = h('input', { type: 'number', min: '1', max: '1000', inputmode: 'numeric', value: String(p ? p.quantity : 1) });
-    const title = h('input', { type: 'text', maxlength: '120', placeholder: 'Masalan: iPhone 15', value: p ? p.title : '' });
-    const value = h('input', { type: 'text', maxlength: '60', placeholder: 'Masalan: 500$', value: p && p.value ? p.value : '' });
-    const desc = h('textarea', { maxlength: '500', placeholder: 'Qisqa tavsif (ixtiyoriy)' });
     desc.value = p && p.description ? p.description : '';
-    const status = h('select', {}, h('option', { value: 'ACTIVE', text: 'Faol (ko‘rinadi)' }), h('option', { value: 'INACTIVE', text: 'Yashirin' }));
-    status.value = p ? p.status : 'ACTIVE';
+    const price = h('input', { type: 'number', min: '1', max: '100000000', inputmode: 'numeric', placeholder: 'Rush Coin', value: p ? String(p.priceRush) : '' });
+    const kind = h('select', {}, ...Object.entries(KIND_UZ).map(([v, t]) => h('option', { value: v, text: t })));
+    kind.value = p ? p.kind : 'CUSTOM';
+    const unlimited = h('input', { type: 'checkbox' });
+    unlimited.checked = p ? p.stock === null : true;
+    const stock = h('input', { type: 'number', min: '0', max: '1000000', inputmode: 'numeric', placeholder: 'Zaxira soni', value: p && p.stock !== null ? String(p.stock) : '' });
+    const syncStock = () => { stock.disabled = unlimited.checked; };
+    unlimited.addEventListener('change', syncStock);
+    syncStock();
+    const active = h('select', {}, h('option', { value: '1', text: 'Faol (ko‘rinadi)' }), h('option', { value: '0', text: 'Yashirin' }));
+    active.value = p && !p.isActive ? '0' : '1';
+    const sort = h('input', { type: 'number', min: '-10000', max: '10000', inputmode: 'numeric', value: String(p ? p.sortOrder : 0) });
     const err = h('p', { class: 'errtxt', role: 'alert' });
 
     let imageUrl = p ? p.imageUrl : null;
@@ -622,9 +463,9 @@
       pick.disabled = true; pick.textContent = 'Yuklanmoqda…';
       try {
         const blob = await shrinkImage(f);
-        const up = await uploadImage(blob);
+        const up = await uploadBlob('/api/admin/uploads/shop-image', blob);
         if (!up.ok) err.textContent = up.message;
-        else { imageUrl = up.url; drawPreview(); }
+        else { imageUrl = up.data.imageUrl; drawPreview(); }
       } catch (_e) {
         err.textContent = 'Rasmni o‘qib bo‘lmadi.';
       } finally {
@@ -632,100 +473,181 @@
       }
     });
 
-    openSheet(p ? 'Sovrinni tahrirlash' : 'Sovrin qo‘shish', (close) => {
+    openSheet(p ? 'Mahsulotni tahrirlash' : 'Yangi mahsulot', (close) => {
       const save = h('button', { class: 'btn block', type: 'button', text: 'Saqlash' });
       save.addEventListener('click', async () => {
         err.textContent = '';
-        const pl = Number(place.value);
-        const q = Number(qty.value);
-        if (!title.value.trim()) { err.textContent = 'Sovrin nomini kiriting.'; return; }
-        if (!Number.isInteger(pl) || pl < 1 || pl > 100) { err.textContent = 'O‘rin 1 dan 100 gacha bo‘lsin.'; return; }
-        if (!Number.isInteger(q) || q < 1 || q > 1000) { err.textContent = 'Soni 1 dan 1000 gacha bo‘lsin.'; return; }
+        const t = title.value.trim();
+        const pr = Number(price.value);
+        const so = Number(sort.value === '' ? 0 : sort.value);
+        const sk = Number(stock.value);
+        if (!t) { err.textContent = 'Mahsulot nomini kiriting.'; return; }
+        if (!Number.isInteger(pr) || pr < 1 || pr > 100000000) { err.textContent = 'Narx 1 dan 100 000 000 gacha butun son bo‘lsin.'; return; }
+        if (!unlimited.checked && (stock.value === '' || !Number.isInteger(sk) || sk < 0 || sk > 1000000)) { err.textContent = 'Zaxira 0 dan 1 000 000 gacha butun son bo‘lsin yoki “Cheksiz” ni belgilang.'; return; }
+        if (!Number.isInteger(so) || so < -10000 || so > 10000) { err.textContent = 'Tartib -10000 dan 10000 gacha butun son bo‘lsin.'; return; }
         const body = {
-          place: pl, title: title.value.trim(), description: desc.value.trim(), value: value.value.trim(),
-          quantity: q, status: status.value, imageUrl,
+          title: t, description: desc.value.trim(), imageUrl, priceRush: pr, kind: kind.value,
+          stock: unlimited.checked ? null : sk, isActive: active.value === '1', sortOrder: so,
         };
         save.disabled = true;
-        const res = p ? await call('PATCH', '/prizes/' + p.id, body) : await call('POST', `/competitions/${c.id}/prizes`, body);
+        const res = p ? await call('PATCH', '/shop/products/' + p.id, body) : await call('POST', '/shop/products', body);
         save.disabled = false;
         if (!ok(res)) { err.textContent = msgOf(res, 'Saqlab bo‘lmadi'); return; }
         close();
-        toast('Sovrin saqlandi');
+        toast(p ? 'Saqlandi' : 'Mahsulot qo‘shildi');
         render();
       });
       return h('div', {},
         h('div', { class: 'upl field' }, preview, h('div', { class: 'btns', style: 'margin:0' }, pick, drop), file),
-        field('Nomi', title),
-        h('div', { class: 'two' }, field('O‘rin (place)', place), field('Soni', qty)),
-        field('Qiymati', value), field('Tavsif', desc), field('Holat', status), err, save);
+        field('Nomi', title), field('Tavsif', desc),
+        h('div', { class: 'two' }, field('Narx (🪙 Rush Coin)', price), field('Turi', kind)),
+        field('Zaxira', h('div', {}, stock, h('label', { style: 'display:flex;align-items:center;gap:8px;margin-top:8px;font-size:13px' }, unlimited, 'Cheksiz'))),
+        h('div', { class: 'two' }, field('Holat', active), field('Tartib', sort)),
+        err, save);
     });
   }
 
-  function winnerForm(w) {
-    const allowed = NEXT_WINNER[w.status] || [];
-    const sel = h('select', {}, h('option', { value: w.status, text: STATUS_UZ[w.status] + ' (hozirgi)' }),
-      ...allowed.map((s) => h('option', { value: s, text: STATUS_UZ[s] })));
-    sel.value = w.status;
-    const note = h('textarea', { maxlength: '500', placeholder: 'Izoh (masalan: bog‘lanish usuli)' });
-    note.value = w.note || '';
+  async function toggleProduct(p) {
+    const res = await call('PATCH', '/shop/products/' + p.id, { isActive: !p.isActive });
+    if (!ok(res)) return toast(msgOf(res), true);
+    toast(p.isActive ? 'Yashirildi' : 'Ko‘rinadigan qilindi');
+    render();
+  }
+
+  async function deleteProduct(p) {
+    const text = p.ordersCount > 0
+      ? `“${p.title}” bo‘yicha buyurtmalar bor, shuning uchun mahsulot o‘chirilmaydi — yashiriladi (buyurtmalar tarixi saqlanadi). Davom etasizmi?`
+      : `“${p.title}” mahsuloti butunlay o‘chirilsinmi?`;
+    if (!(await confirmBox(text))) return;
+    const res = await call('DELETE', '/shop/products/' + p.id);
+    if (!ok(res)) return toast(msgOf(res), true);
+    toast(res.data.deactivated ? 'Yashirildi (buyurtmalar tarixi saqlandi)' : 'O‘chirildi');
+    render();
+  }
+
+  // ---------- Buyurtmalar ----------
+  function orderRow(o) {
+    return h('div', { class: 'prow' },
+      thumb(o.imageUrl),
+      h('div', { class: 'pb' },
+        h('div', { class: 'pt', text: `#${o.id} ${o.productTitle}` }),
+        h('div', { class: 'ps', text: userLine(o.user) }),
+        h('div', { class: 'ps', text: `${nf.format(o.priceRush)} 🪙 • ${KIND_UZ[o.productKind] || o.productKind} • ${fmt(o.createdAt)}` }),
+        o.adminNote ? h('div', { class: 'note', text: o.adminNote }) : null,
+        o.proofImage ? h('img', { src: o.proofImage, alt: '', loading: 'lazy', style: 'display:block;max-width:100%;max-height:120px;border-radius:12px;margin-top:6px' }) : null),
+      h('div', { class: 'acts', style: 'flex-direction:column;align-items:flex-end;gap:6px' },
+        badge(o.status),
+        h('button', { class: 'btn sm sec', type: 'button', text: 'Boshqarish', onclick: () => orderForm(o) })));
+  }
+
+  async function renderOrders(guard) {
+    const chips = h('div', { class: 'chips' },
+      ...[['ALL', 'Hammasi'], ...ORDER_STATUSES.map((s) => [s, `${ORDER_ICON[s]} ${STATUS_UZ[s]}`])].map(([k, label]) =>
+        h('button', { type: 'button', class: st.orderStatus === k ? 'active' : '', text: label, onclick: () => { st.orderStatus = k; render(); } })));
+    const content = h('div', {}, skeleton(3, 'tall'));
+    st.body.replaceChildren(chips, content);
+
+    const filter = st.orderStatus !== 'ALL' ? '&status=' + st.orderStatus : '';
+    const res = await call('GET', `/shop/orders?limit=30${filter}`);
+    if (!guard()) return;
+    const card = h('div', { class: 'card' });
+    if (!ok(res)) {
+      card.appendChild(stateNode('📡', 'Yuklab bo‘lmadi', msgOf(res), 'Qayta urinish', render));
+    } else if (!res.data.items.length) {
+      card.appendChild(stateNode('📭', 'Buyurtmalar yo‘q', st.orderStatus === 'ALL' ? 'Foydalanuvchilar sotib olgach shu yerda paydo bo‘ladi.' : 'Bu holatda buyurtma yo‘q.'));
+    } else {
+      for (const o of res.data.items) card.appendChild(orderRow(o));
+      let cursor = res.data.nextCursor;
+      const more = h('button', { class: 'btn sec block', type: 'button', text: 'Yana yuklash' });
+      more.hidden = !cursor;
+      more.addEventListener('click', async () => {
+        more.disabled = true;
+        const r = await call('GET', `/shop/orders?limit=30${filter}&cursor=${cursor}`);
+        more.disabled = false;
+        if (!ok(r)) return toast(msgOf(r), true);
+        for (const o of r.data.items) card.insertBefore(orderRow(o), more);
+        cursor = r.data.nextCursor;
+        more.hidden = !cursor;
+      });
+      card.appendChild(more);
+    }
+    content.replaceChildren(card);
+  }
+
+  function orderForm(o) {
+    const allowed = NEXT_ORDER[o.status] || [];
+    const sel = h('select', {}, h('option', { value: o.status, text: STATUS_UZ[o.status] + ' (hozirgi)' }),
+      ...allowed.map((s) => h('option', { value: s, text: `${ORDER_ICON[s]} ${STATUS_UZ[s]}` })));
+    sel.value = o.status;
+    sel.disabled = !allowed.length;
+    const note = h('textarea', { maxlength: '1000', placeholder: 'Izoh (foydalanuvchiga ko‘rinadi)' });
+    note.value = o.adminNote || '';
+    const hint = h('p', { class: 'muted', style: 'font-size:12.5px' });
+    const syncHint = () => {
+      if (sel.value === 'CANCELLED' && o.status !== 'CANCELLED') hint.textContent = `Bekor qilinsa ${nf.format(o.priceRush)} 🪙 foydalanuvchiga bir marta qaytariladi (zaxira bo‘lsa +1). Holatni keyin o‘zgartirib bo‘lmaydi.`;
+      else if (sel.value === 'DELIVERED' && o.status !== 'DELIVERED') hint.textContent = 'Yetkazildi holatidan keyin o‘zgartirib bo‘lmaydi. Foydalanuvchiga bot orqali xabar boradi.';
+      else if (!allowed.length) hint.textContent = 'Buyurtma yakunlangan — holatni o‘zgartirib bo‘lmaydi (izohni tahrirlash mumkin).';
+      else hint.textContent = '';
+    };
+    sel.addEventListener('change', syncHint);
+    syncHint();
     const err = h('p', { class: 'errtxt', role: 'alert' });
 
-    openSheet(`${placeLabel(w.place)} ${nameOf(w.user)}`, (close) => {
+    // Isbot rasmi (yetkazilganini tasdiqlovchi). Bekor qilingan buyurtmaga yuklanmaydi.
+    let proof = o.proofImage || null;
+    const proofPrev = h('div', { class: 'thumb lg' });
+    const drawProof = () => proofPrev.replaceChildren(...(proof ? [h('img', { src: proof, alt: '' })] : [document.createTextNode('🧾')]));
+    drawProof();
+    const pfile = h('input', { type: 'file', accept: 'image/jpeg,image/png,image/webp' });
+    const ppick = h('button', { class: 'btn sm sec', type: 'button', text: proof ? 'Isbotni almashtirish' : 'Isbot rasmi yuklash', onclick: () => pfile.click() });
+    pfile.addEventListener('change', async () => {
+      const f = pfile.files && pfile.files[0];
+      pfile.value = '';
+      if (!f) return;
+      err.textContent = '';
+      ppick.disabled = true; ppick.textContent = 'Yuklanmoqda…';
+      try {
+        const blob = await shrinkImage(f, 1600);
+        const up = await uploadBlob(`/api/admin/shop/orders/${o.id}/proof`, blob);
+        if (!up.ok) err.textContent = up.message;
+        else {
+          proof = up.data.order.proofImage;
+          drawProof();
+          toast('Isbot rasmi yuklandi');
+          render();
+        }
+      } catch (_e) {
+        err.textContent = 'Rasmni o‘qib bo‘lmadi.';
+      } finally {
+        ppick.disabled = false; ppick.textContent = 'Isbotni almashtirish';
+      }
+    });
+
+    openSheet(`#${o.id} • ${o.productTitle}`, (close) => {
       const save = h('button', { class: 'btn block', type: 'button', text: 'Saqlash' });
       save.addEventListener('click', async () => {
         err.textContent = '';
         const body = {};
-        if (sel.value !== w.status) body.status = sel.value;
-        if ((note.value.trim() || null) !== (w.note || null)) body.note = note.value.trim();
+        if (sel.value !== o.status) body.status = sel.value;
+        if ((note.value.trim() || null) !== (o.adminNote || null)) body.adminNote = note.value.trim();
         if (!Object.keys(body).length) { close(); return; }
+        if (body.status === 'CANCELLED' && !(await confirmBox(`Buyurtma #${o.id} bekor qilinsinmi? ${nf.format(o.priceRush)} 🪙 foydalanuvchiga qaytariladi.`))) return;
+        if (body.status === 'DELIVERED' && !(await confirmBox(`Buyurtma #${o.id} yetkazildi deb belgilansinmi? Buni qaytarib bo‘lmaydi.`))) return;
         save.disabled = true;
-        const res = await call('PATCH', '/winners/' + w.id, body);
+        const res = await call('PATCH', '/shop/orders/' + o.id, body);
         save.disabled = false;
         if (!ok(res)) { err.textContent = msgOf(res, 'Saqlab bo‘lmadi'); return; }
         close();
-        toast('Yangilandi');
+        toast(body.status === 'CANCELLED' ? 'Bekor qilindi, Rush qaytarildi' : 'Yangilandi');
         render();
       });
-      return h('div', {}, h('div', { class: 'muted', text: `🎁 ${w.prize}` }), field('Holat', sel), field('Izoh', note), err, save);
+      return h('div', {},
+        h('div', { class: 'muted' }, userLine(o.user)),
+        h('div', { class: 'muted' }, `${nf.format(o.priceRush)} 🪙 • ${KIND_UZ[o.productKind] || o.productKind} • ${fmt(o.createdAt)}`),
+        field('Holat', sel), hint, field('Izoh', note),
+        o.status !== 'CANCELLED' ? h('div', { class: 'upl field' }, proofPrev, h('div', { class: 'btns', style: 'margin:0' }, ppick), pfile) : null,
+        err, save);
     });
-  }
-
-  // ---------- Amallar ----------
-  async function activateCompetition(c) {
-    if (!(await confirmBox(`"${c.title}" faollashtirilsinmi? Foydalanuvchilar reklama ko‘rib ball to‘play boshlaydi.`))) return;
-    const res = await call('POST', `/competitions/${c.id}/activate`);
-    if (!ok(res)) return toast(msgOf(res), true);
-    toast('Chempionat faollashtirildi');
-    render();
-  }
-  async function endCompetition(c) {
-    if (!(await confirmBox(`"${c.title}" hozir tugatilsinmi? G‘oliblar aniqlanadi, buni qaytarib bo‘lmaydi.`))) return;
-    const res = await call('POST', `/competitions/${c.id}/end`);
-    if (!ok(res)) return toast(msgOf(res), true);
-    toast(`Tugatildi. G‘oliblar: ${res.data.winners}`);
-    render();
-  }
-  async function archiveCompetition(c) {
-    if (!(await confirmBox(`"${c.title}" arxivlansinmi? Ma’lumotlar saqlanadi.`))) return;
-    const res = await call('POST', `/competitions/${c.id}/archive`);
-    if (!ok(res)) return toast(msgOf(res), true);
-    toast('Arxivlandi');
-    render();
-  }
-  async function deleteCompetition(c) {
-    if (!(await confirmBox(`"${c.title}" qoralamasi o‘chirilsinmi?`))) return;
-    const res = await call('DELETE', '/competitions/' + c.id);
-    if (!ok(res)) return toast(msgOf(res), true);
-    toast('O‘chirildi');
-    st.detailId = null;
-    render();
-  }
-  async function deletePrize(p) {
-    if (!(await confirmBox(`"${p.title}" sovrini o‘chirilsinmi?`))) return;
-    const res = await call('DELETE', '/prizes/' + p.id);
-    if (!ok(res)) return toast(msgOf(res), true);
-    toast('Sovrin o‘chirildi');
-    render();
   }
 
   // ---------- Rasm: brauzerda kichraytirish + yuklash ----------
@@ -750,16 +672,17 @@
     });
   }
 
-  async function uploadImage(blob) {
+  /** Xom bayt yuboradi (Content-Type = rasm turi). Muvaffaqiyatda { ok:true, data } (data — server javobi). */
+  async function uploadBlob(path, blob) {
     try {
-      const res = await fetch('/api/admin/uploads/prize-image', {
+      const res = await fetch(path, {
         method: 'POST',
         headers: { Authorization: 'tma ' + ((tg && tg.initData) || ''), 'Content-Type': blob.type },
         body: blob,
       });
       let data = null;
       try { data = await res.json(); } catch (_e) { /* bo'sh */ }
-      if (res.ok && data && data.success) return { ok: true, url: data.url };
+      if (res.ok && data && data.success) return { ok: true, data };
       return { ok: false, message: (data && data.message) || 'Rasm yuklanmadi.' };
     } catch (_e) {
       return { ok: false, message: 'Tarmoq xatosi.' };

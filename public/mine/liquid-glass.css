@@ -2,14 +2,14 @@
    mine.css dan KEYIN yuklanadi. Class, id va JS hook'lar o'zgarmagan.
 
    IKKI QATLAM
-   (1) CONTENT  — karta, ro'yxat, podium, sovrin, forma, hero: shishasiz, to'liq zich fill.
+   (1) CONTENT  — karta, ro'yxat, forma: shishasiz, to'liq zich fill.
    (2) CONTROLS — tab bar, yuqori chip'lar, "Mening o'rnim" paneli, admin seg, sheet, toast, asosiy CTA: faqat Regular glass.
 
    QOIDALAR
    - Faqat Regular variant (Clear'ning 3 sharti bajarilmaydi: media-boy fon, dimming zararsiz, yorqin kontent).
    - Glass ustiga glass yo'q: ichki indikator/tugmalar fill; nav indikatori faqat sudralganda glass'ga "ko'tariladi".
    - Tint faqat bitta: asosiy CTA (reklama ko'rish).
-   - Kichik elementlar (tab bar) fonga qarab light/dark almashadi; katta (sheet, me-card) almashmaydi.
+   - Kichik elementlar (tab bar) fonga qarab light/dark almashadi; katta (sheet) almashmaydi.
    - Scroll edge effect: kontent tab bar va yuqori chip'lar ostida asta fonga eriydi.
    - Accessibility: reduced transparency / increased contrast / reduced motion. */
 
@@ -68,8 +68,8 @@
   --scrim:rgba(20,30,60,.25); --scrim-lb:rgba(10,14,30,.8); --o-a:.42;
 }
 body{font-family:var(--font-body);letter-spacing:-.011em;-webkit-font-smoothing:antialiased}
-h1,h2,.brand,.coin-bal,.countdown b,.stat b,.pname,.hc-month,.wplace,.sheet h3{font-family:var(--font-display)}
-h1,.hero h1{font-size:34px;font-weight:700;letter-spacing:-.04em}
+h1,h2,.brand,.coin-bal,.stat b,.pname,.sheet h3 {font-family:var(--font-display)}
+h1 {font-size:34px;font-weight:700;letter-spacing:-.04em}
 h2{font-size:28px;font-weight:700;letter-spacing:-.034em}
 .sec{font-size:20px;font-weight:700}
 
@@ -85,27 +85,21 @@ html.lg-on body::before,html.lg-on body::after{display:none}
 .lg-bg .o4{right:-36vmax;top:128vmax;--k:-.7px;background:radial-gradient(circle,rgb(var(--o4)/calc(var(--o-a)*.6)),transparent 62%)}
 
 /* Plitalar: zich fill + hairline + yumshoq soya. Blur, rim va yorug'lik dog'i yo'q */
-.card,.tile,.hcard,.wblock,.pod,.state:not(.full){
-  border:0;border-radius:var(--r-lg);-webkit-backdrop-filter:none;backdrop-filter:none;
+.card,.tile,.state:not(.full) {border:0;border-radius:var(--r-lg);-webkit-backdrop-filter:none;backdrop-filter:none;
   box-shadow:inset 0 0 0 .5px var(--line),var(--card-shadow)}
 .card.stat,.grid2 .card{border-radius:24px}
-.pod{border-radius:24px 24px 14px 14px}.hcard{border-radius:28px}.wblock{border-radius:20px}.tile{border-radius:22px}
-.hero{border:0;box-shadow:inset 0 0 0 .5px var(--g-edge),var(--shadow)}
-.hero .hrow .muted{text-transform:none;letter-spacing:0;font-size:13px;font-weight:600}
+.tile{border-radius:22px}
+
 .row.mine{background:linear-gradient(90deg,rgb(10 132 255/.22),transparent);border-radius:18px;box-shadow:inset 0 0 0 .5px rgb(10 132 255/.4)}
 .row+.row,.prow+.prow,.feed .frow+.frow{border-top:.5px solid var(--line)}
 .stats .stat+.stat{border-left:.5px solid var(--line)}
-.pod.p1{box-shadow:inset 0 0 0 .5px rgb(255 214 10/.55),0 0 40px -10px rgb(255 214 10/.35),var(--card-shadow)}
-.pod.mine{box-shadow:inset 0 0 0 1.5px var(--link),0 0 24px var(--glow)}
-.prize.top1::after{border-radius:calc(var(--r-lg) - 1px)}
 
 /* Progress, maydonlar, tugmalar (content ichidagi boshqaruv = fill) */
 .bar{background:var(--field);height:10px;box-shadow:inset 0 1px 3px rgba(0,0,0,.25),inset 0 0 0 .5px var(--line)}
 .bar i{background:linear-gradient(90deg,#64D2FF,#0A84FF 60%,#5E5CE6);box-shadow:0 0 14px rgb(10 132 255/.6)}
-.bet-row input,.field input,.field textarea,.field select,.search input{
-  background:var(--field);border:0;border-radius:18px;color:var(--text);
+.field input,.field textarea,.field select,.search input {background:var(--field);border:0;border-radius:18px;color:var(--text);
   box-shadow:inset 0 1px 3px rgba(0,0,0,.22),inset 0 0 0 .5px var(--line-strong)}
-.bet-row input:focus,.field input:focus,.field textarea:focus,.field select:focus,.search input:focus{outline:0;
+.field input:focus,.field textarea:focus,.field select:focus,.search input:focus {outline:0;
   box-shadow:0 0 0 3.5px rgb(10 132 255/.42),inset 0 0 0 .5px var(--primary)}
 .btn{border-radius:999px;color:#fff;background:var(--primary);
   box-shadow:inset 0 1px 0 rgba(255,255,255,.28),0 6px 16px -8px var(--glow);transition:transform .5s var(--spring),filter .2s}
@@ -118,20 +112,16 @@ html.lg-on body::before,html.lg-on body::after{display:none}
 .theme-btn,.csheet-x{border:0;border-radius:999px;background:var(--field);color:var(--text);box-shadow:inset 0 0 0 .5px var(--line-strong)}
 .theme-btn:active{transform:scale(.9)}
 .avatar{box-shadow:0 8px 20px -8px var(--glow)}
-.thumb,.proof-img{border-radius:inherit;box-shadow:inset 0 0 0 .5px var(--line)}
-.lightbox{background:var(--scrim-lb);-webkit-backdrop-filter:none;backdrop-filter:none}
-.lightbox img{border-radius:22px;box-shadow:0 30px 80px rgba(0,0,0,.5),0 0 0 .5px rgba(255,255,255,.3)}
+.thumb {border-radius:inherit;box-shadow:inset 0 0 0 .5px var(--line)}
 
 /* ================= CONTROLS QATLAMI (Regular glass) ================= */
 /* Yagona recept: material + yuqori burchakdan yorug'lik + chekka halqa + soya */
-.chip,.toast,.me-card,.seg{
-  background:linear-gradient(var(--ang),var(--g-glow),transparent 46%),var(--g-tint);
+.chip,.toast,.seg {background:linear-gradient(var(--ang),var(--g-glow),transparent 46%),var(--g-tint);
   -webkit-backdrop-filter:var(--m-regular);backdrop-filter:var(--m-regular);border:0;
   box-shadow:inset 0 0 0 .5px var(--g-edge),inset 0 0 14px -6px var(--g-glow),inset 0 -12px 18px -14px var(--g-deep),0 1px 2px rgba(0,0,0,.08),0 14px 30px -14px var(--g-drop);
   transition:transform .5s var(--spring),opacity .3s}
 /* Specular rim: konik gradient, burchagi --ang (scroll + giroskop) */
-.chip::before,.toast::before,.me-card::before,.nav::after,.nav-ind::after{
-  content:"";position:absolute;inset:0;border-radius:inherit;padding:1px;pointer-events:none;z-index:3;
+.chip::before,.toast::before,.nav::after,.nav-ind::after {content:"";position:absolute;inset:0;border-radius:inherit;padding:1px;pointer-events:none;z-index:3;
   background:conic-gradient(from var(--ang),var(--ring-hi),var(--ring-lo) 18%,var(--ring-mid) 46%,var(--ring-lo) 70%,var(--ring-hi));
   -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;
   mask:linear-gradient(#000 0 0) content-box exclude,linear-gradient(#000 0 0);mask-composite:exclude;opacity:.85}
@@ -192,22 +182,9 @@ html.lg-on body::before,html.lg-on body::after{display:none}
 .tab:active{transform:scale(.88)}
 .tab.drag-target:not(.active){color:var(--text)}
 
-/* "Mening o'rnim" paneli: kontent ustida suzuvchi, katta element — light/dark almashmaydi */
-.me-card{border-radius:26px;padding:8px 18px}
-
 /* Admin seg: yopishqoq boshqaruv = glass; faol bo'lim = fill */
 .seg{border-radius:999px;padding:4px}.seg button{border-radius:999px}
 .seg button.active{background:var(--seg-on);color:var(--text);box-shadow:inset 0 0 0 .5px var(--g-edge)}
-
-/* Segment (Joriy / Tarix): konteyner = fill, thumb = fill; tegilganda glass'ga ko'tariladi */
-.ctabs{background:var(--field);border-radius:999px;padding:4px;border:0;-webkit-backdrop-filter:none;backdrop-filter:none;
-  box-shadow:inset 0 1.5px 4px rgba(0,0,0,.22),inset 0 0 0 .5px var(--line)}
-.ctab-ind{border-radius:999px;border:0;background:radial-gradient(70% 90% at 50% 0%,rgba(255,255,255,.28),transparent 70%),rgba(255,255,255,.16);
-  box-shadow:inset 0 0 0 .5px var(--g-edge),inset 0 1px 0 rgba(255,255,255,.3),0 6px 14px -6px var(--g-drop);
-  transition:transform .6s var(--spring),scale .16s linear,box-shadow .3s}
-[data-theme="light"] .ctab-ind{background:#fff}
-.ctabs:has(.ctab:active) .ctab-ind{-webkit-backdrop-filter:blur(2px) saturate(220%) brightness(1.2);backdrop-filter:blur(2px) saturate(220%) brightness(1.2)}
-.ctab,.ctab.active{color:var(--text);font-weight:600}
 
 /* Sheet: katta Regular glass; ochilganda qalinlashadi. Ichidagi plitalar glass emas, fill */
 .sheet-bg{background:var(--scrim);-webkit-backdrop-filter:none;backdrop-filter:none;animation:fadeBg .4s var(--ease)}
@@ -216,7 +193,7 @@ html.lg-on body::before,html.lg-on body::after{display:none}
   box-shadow:inset 0 0 0 .5px var(--g-edge),inset 0 1.4px 0 var(--ring-hi),0 -26px 64px -12px var(--g-drop);animation:sheetUp .65s var(--spring)}
 @keyframes sheetUp{from{transform:translateY(100%)}to{transform:none}}
 .sheet::before{width:36px;height:5px;background:var(--faint)}
-.sheet .card,.sheet .wblock{background:var(--card-2);box-shadow:inset 0 0 0 .5px var(--line)}
+.sheet .card {background:var(--card-2);box-shadow:inset 0 0 0 .5px var(--line)}
 
 /* Toast */
 .toast{color:var(--text);border-radius:999px;transition:opacity .3s,transform .6s var(--spring)}
@@ -237,13 +214,12 @@ html.lg-on body::before,html.lg-on body::after{display:none}
 .view{animation:lgIn .6s var(--soft)}
 @keyframes lgIn{from{opacity:0;transform:translate3d(24px,0,0) scale(.985)}to{opacity:1;transform:none}}
 @keyframes rise{from{opacity:0;transform:translateY(16px) scale(.97)}to{opacity:1;transform:none}}
-.ccard:active,.hcard:active{transform:scale(.97)}
 
 /* ---------- Refraction (Chromium/Android WebView; JS yoqadi): faqat sudralayotgan indikator ---------- */
 .lg-refract .nav-ind.dragging{-webkit-backdrop-filter:url(#lg-ind) saturate(240%) brightness(1.2);backdrop-filter:url(#lg-ind) saturate(240%) brightness(1.2)}
 
 /* ---------- Scroll paytida: cheksiz dekor animatsiyalar to'xtaydi (JS .scrolling qo'yadi) ---------- */
-html.scrolling .atmo *,html.scrolling .crown::after,html.scrolling .cta::after,html.scrolling .cta-wrap::before,html.scrolling #homeBarFill::after,html.scrolling .sk::after,html.scrolling .avatar::before,html.scrolling .prize.top1::before,html.scrolling .live i{animation-play-state:paused}
+html.scrolling .cta::after,html.scrolling .cta-wrap::before,html.scrolling .sk::after,html.scrolling .avatar::before {animation-play-state:paused}
 .view.stag>*,.view{will-change:auto}
 
 /* ---------- Moslashuvchanlik va accessibility ---------- */
@@ -266,15 +242,15 @@ html.scrolling .atmo *,html.scrolling .crown::after,html.scrolling .cta::after,h
   :root,[data-theme="dark"]{--g-tint:rgba(20,22,34,.9);--sheet-tint:rgba(16,17,28,.94);--hint:rgba(235,235,245,.88);--g-edge:rgba(255,255,255,.55)}
   [data-theme="light"]{--g-tint:rgba(255,255,255,.92);--sheet-tint:rgba(250,251,255,.95);--hint:rgba(20,24,50,.84);--g-edge:rgba(20,30,70,.5)}
   .nav,.nav[data-ctx="dark"],.nav[data-ctx="light"]{--n-tint:var(--g-tint);--n-fg:var(--text)}
-  .card,.tile,.hcard,.wblock,.pod,.state:not(.full){box-shadow:inset 0 0 0 1px var(--line-strong)}
-  .chip,.toast,.me-card,.seg,.sheet{box-shadow:inset 0 0 0 1.5px var(--g-edge)}
+  .card,.tile,.state:not(.full) {box-shadow:inset 0 0 0 1px var(--line-strong)}
+  .chip,.toast,.seg,.sheet {box-shadow:inset 0 0 0 1.5px var(--g-edge)}
   .nav::before{box-shadow:inset 0 0 0 1.5px var(--g-edge)}
   .tab.active,.tab.active i{color:var(--text)}
 }
 /* Reduced Motion: elastik harakat va morph o'chadi, effektlar sokinlashadi */
 @media (prefers-reduced-motion:reduce){
   .view,.nav,.sheet,.cta-wrap::before{animation:none}
-  .nav-ind,.ctab-ind,.tab,.nav,.btn,.cta,.chip{transition-duration:.01s}
+  .nav-ind,.tab,.nav,.btn,.cta,.chip {transition-duration:.01s}
   .nav-ind.dragging{scale:1.04}
 }
 /* backdrop-filter yo'q brauzer: zich fon */
