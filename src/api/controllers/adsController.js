@@ -16,6 +16,7 @@ const REASON_STATUS = Object.freeze({
 });
 
 const sessionIdSchema = z.object({ sessionId: z.string().uuid() }).strict();
+const startSchema = z.object({ slot: z.number().int().min(0).max(9).optional() }).strict(); // eski klient body yubormasa slot = 0
 
 function send(res, result) {
   if (result.success) return res.json(result);
@@ -24,7 +25,8 @@ function send(res, result) {
 
 /** POST /api/ads/session — reklama ko'rishdan oldin sessiya ochadi */
 const startSession = asyncHandler(async (req, res) => {
-  send(res, await createSession(req.auth.user));
+  const { slot = 0 } = startSchema.parse(req.body || {});
+  send(res, await createSession(req.auth.user, slot));
 });
 
 /**

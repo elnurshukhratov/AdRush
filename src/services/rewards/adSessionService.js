@@ -11,8 +11,9 @@ const { fail, runTx } = require('./rewardCore');
  * shuning uchun klient o'zi "reward ID" o'ylab topa olmaydi.
  * Bitta userda bir vaqtda bitta PENDING sessiya: yangisi eskisini EXPIRED qiladi.
  */
-async function createSession(user) {
+async function createSession(user, slot = 0) {
   const now = new Date();
+  if (!Number.isInteger(slot) || slot < 0 || slot >= config.ads.slots) return fail('INVALID_SLOT');
 
   const result = await runTx(async (tx) => {
     await lockUser(tx, user.telegramId);
@@ -25,6 +26,7 @@ async function createSession(user) {
     const session = await tx.adSession.create({
       data: {
         userId: user.id,
+        slot,
         expiresAt: new Date(now.getTime() + config.ads.sessionTtlMs),
       },
     });

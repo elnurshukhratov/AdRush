@@ -58,7 +58,8 @@ const myStats = asyncHandler(async (req, res) => {
     rushCoins: balances.rushCoins,
     adsWatched, // jami valid reklamalar (olmos bergan)
     diamondPerAd: config.diamond.perAd,
-    diamondToRush: config.diamond.toRush,
+    adSlots: config.ads.slots, // Vazifalardagi reklama kartalari soni
+    convertRate: config.diamond.convert, // { diamonds, rush, stepDiamonds, stepRush }
     referralDiamondReward: config.diamond.referralReward,
     referrals,
   });

@@ -60,11 +60,11 @@
 
   const state = {
     view: 'home', refreshSec: 15, busy: false, busyLabel: '',
-    coolUntil: 0, cooldownMs: 10000, noAdUntil: 0, blockId: null, pollId: null,
+    cooldownMs: 5000, blockId: null, pollId: null, slot: 0, slotCount: 0,
     loaded: false, statsOk: false, isAdmin: false, backFn: null, gated: false, gateKind: null, subChannel: null, subBusy: false,
     coinItems: [], shopItems: [],
     // Olmos / Rush Coin: hammasi serverdan keladi (faqat ko'rsatish uchun saqlanadi)
-    tgId: '', diamonds: 0, coins: 0, adsWatched: 0, diamondPerAd: 1, diamondToRush: 12, referralDiamondReward: 5,
+    tgId: '', diamonds: 0, coins: 0, adsWatched: 0, diamondPerAd: 1, rate: { d: 12, r: 4, sd: 3, sr: 1 }, referralDiamondReward: 5,
   };
 
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -132,7 +132,7 @@
   }
   /** Xabar kalit bilan beriladi (til o'zgarsa o'zi tarjima bo'ladi); kalit bo'sh bo'lsa tozalanadi. */
   function say(key, kind, vars) {
-    const m = $('msg');
+    const m = (adSlots[state.slot] || adSlots[0] || { msg: $('msg') }).msg; // faol reklama kartasining xabari
     if (key) tx(m, key, vars); else plain(m, '');
     m.className = 'msg center' + (kind ? ' ' + kind : '');
   }
@@ -499,30 +499,106 @@
     if (view === 'admin' && window.AdRushAdmin) window.AdRushAdmin.onShow();
   }
 
+  // ---------- Reklama kartalari (bir nechta slot) ----------
+  // Slot 0 — HTML dagi asosiy karta (#taskAd); qolganlari uning nusxasi. Navbat/cooldown hamma slotga umumiy (bir vaqtda bitta reklama).
+  const adSlots = []; // { card, btn, label, plus, msg, reward }
+  const DEFAULT_AD_SLOTS = 5;
+  function registerSlot(card) {
+    adSlots.push({
+      card,
+      btn: card.querySelector('.cta'),
+      label: card.querySelector('.cta > span'),
+      plus: card.querySelector('.plus'),
+      msg: card.querySelector('p.msg'),
+      reward: card.querySelector('.task-head .chip-sm'),
+      coolUntil: 0, // shu kartadan keyingi reklamagacha (cooldown)
+      noAdUntil: 0, // shu karta uchun AdsGram reklama bermadi
+    });
+  }
+
+  /** Reklama kartalari sonini n ga keltiradi (ortiqchasi yashiriladi, yetmasa nusxa olinadi). */
+  function ensureAdSlots(n) {
+    const first = $('taskAd');
+    if (!first) return;
+    const want = Math.max(1, Math.min(10, n | 0));
+    if (adSlots.length && want === state.slotCount) return;
+    if (!adSlots.length) registerSlot(first);
+    let last = adSlots[adSlots.length - 1].card;
+    while (adSlots.length < want) {
+      const idx = adSlots.length;
+      const c = first.cloneNode(true);
+      c.removeAttribute('id');
+      c.querySelectorAll('[id]').forEach((e) => e.removeAttribute('id'));
+      c.querySelector('.slot-n').textContent = '#' + (idx + 1);
+      c.querySelector('.cta').classList.remove('ok', 'busy');
+      c.querySelector('.plus').classList.remove('go');
+      const m = c.querySelector('p.msg'); m.className = 'msg center'; m.textContent = ''; delete m.dataset.i18n; delete m.dataset.i18nVars;
+      last.after(c);
+      last = c;
+      registerSlot(c);
+      adSlots[idx].btn.addEventListener('click', () => watchAd(idx));
+      i18n.apply(c);
+    }
+    state.slotCount = want;
+    adSlots.forEach((s, i) => {
+      s.card.hidden = i >= want;
+      const nEl = s.card.querySelector('.slot-n');
+      if (nEl) nEl.hidden = want < 2; // bitta karta bo'lsa raqam ko'rsatilmaydi
+    });
+    renderRates();
+    updateWatchState();
+  }
+
   // ---------- Reklama tugmasi holati ----------
+  /** Hozir bosish mumkin bo'lgan birinchi ko'rinadigan karta (yuqoridagi tugma uchun); yo'q bo'lsa -1. */
+  function freeSlotIndex() {
+    const now = Date.now();
+    return adSlots.findIndex((sl) => !sl.card.hidden && sl.coolUntil <= now && sl.noAdUntil <= now);
+  }
+
   function updateWatchState() {
-    const cd = Math.max(0, Math.ceil((state.coolUntil - Date.now()) / 1000));
-    const noAd = Math.max(0, Math.ceil((state.noAdUntil - Date.now()) / 1000)); // AdsGram reklama bermadi -> tugma vaqtincha o'chiq
-    const btn = $('watch');
-    btn.disabled = state.busy || !state.loaded || cd > 0 || noAd > 0;
-    btn.classList.toggle('busy', state.busy);
-    if (state.busy) tx($('watchLabel'), state.busyLabel || 'watch.loading');
-    else if (!state.loaded) tx($('watchLabel'), 'watch.loading');
-    else if (cd > 0) tx($('watchLabel'), 'watch.cooldown', { n: cd });
-    else if (noAd > 0) tx($('watchLabel'), 'watch.no_ad', { n: noAd });
-    else tx($('watchLabel'), 'watch.label', { n: state.diamondPerAd });
+    const now = Date.now();
+    const secs = (t) => Math.max(0, Math.ceil((t - now) / 1000));
+    const list = adSlots.length ? adSlots : [{ btn: $('watch'), label: $('watchLabel'), coolUntil: 0, noAdUntil: 0, card: { hidden: false } }];
+    let free = -1;
+    let minWait = 0;
+    list.forEach((sl, i) => {
+      const cd = secs(sl.coolUntil);
+      const noAd = secs(sl.noAdUntil); // shu karta uchun AdsGram reklama bermadi -> faqat shu tugma vaqtincha o'chiq
+      const mine = i === state.slot;
+      sl.btn.disabled = state.busy || !state.loaded || cd > 0 || noAd > 0; // bir vaqtda bitta reklama (server ham bitta PENDING sessiya ushlaydi)
+      sl.btn.classList.toggle('busy', state.busy && mine);
+      if (state.busy && mine) tx(sl.label, state.busyLabel || 'watch.loading');
+      else if (!state.loaded) tx(sl.label, 'watch.loading');
+      else if (cd > 0) tx(sl.label, 'watch.cooldown', { n: cd });
+      else if (noAd > 0) tx(sl.label, 'watch.no_ad', { n: noAd });
+      else tx(sl.label, 'watch.label', { n: state.diamondPerAd });
+      if (!sl.card.hidden) {
+        const wait = Math.max(cd, noAd);
+        if (wait === 0 && free < 0) free = i;
+        if (wait > 0 && (minWait === 0 || wait < minWait)) minWait = wait;
+      }
+    });
+    const tw = $('topWatch');
+    if (tw) { // Yuqoridagi tugma: birinchi bo'sh kartani ochadi; hammasi kutayotgan bo'lsa eng yaqin kutish vaqtini ko'rsatadi
+      tw.disabled = state.busy || !state.loaded || free < 0;
+      tw.classList.toggle('busy', state.busy);
+      $('topWatchLabel').textContent = state.busy ? '…' : free >= 0 ? '+' + nf.format(state.diamondPerAd) : minWait + 's';
+    }
     updateConvertState();
   }
 
   /** AdsGram reklama bermasa (no fill / SDK yo'q) tugmalarni NO_AD_RETRY_MS ga o'chirib qo'yadi, keyin o'zi qayta yoqiladi. */
   const NO_AD_RETRY_MS = 60000;
   function markNoAd() {
-    state.noAdUntil = Date.now() + NO_AD_RETRY_MS;
+    const sl = adSlots[state.slot];
+    if (sl) sl.noAdUntil = Date.now() + NO_AD_RETRY_MS; // faqat faol karta
     updateWatchState();
   }
 
   function startCooldown(ms) {
-    if (ms > 0) state.coolUntil = Date.now() + ms;
+    const sl = adSlots[state.slot];
+    if (sl && ms > 0) sl.coolUntil = Date.now() + ms; // faqat shu karta kutadi, qolganlari mustaqil
     updateWatchState();
   }
 
@@ -586,7 +662,11 @@
     $('homeError').hidden = true;
     const d = res.data;
     if (Number.isInteger(d.diamondPerAd) && d.diamondPerAd > 0) state.diamondPerAd = d.diamondPerAd;
-    if (Number.isInteger(d.diamondToRush) && d.diamondToRush > 0) state.diamondToRush = d.diamondToRush;
+    if (Number.isInteger(d.adSlots) && d.adSlots > 0) ensureAdSlots(d.adSlots);
+    const cr = d.convertRate;
+    if (cr && [cr.diamonds, cr.rush, cr.stepDiamonds, cr.stepRush].every((x) => Number.isInteger(x) && x > 0)) {
+      state.rate = { d: cr.diamonds, r: cr.rush, sd: cr.stepDiamonds, sr: cr.stepRush };
+    }
     if (Number.isInteger(d.referralDiamondReward) && d.referralDiamondReward > 0) state.referralDiamondReward = d.referralDiamondReward;
     if (Number.isInteger(d.adsWatched)) { state.adsWatched = d.adsWatched; setNum($('pAdsWatched'), d.adsWatched, false); }
     setBalances(d, false);
@@ -606,15 +686,15 @@
 
   /** Kurslar va mukofotlar (qiymatlar serverdan: config). */
   function renderRates() {
-    const rate = tt('home.rate', { n: nf.format(state.diamondToRush) });
+    const rate = tt('home.rate', { d: nf.format(state.rate.d), r: nf.format(state.rate.r) });
     plain($('homeRate'), rate);
     plain($('convRate'), rate);
     tx($('homeTasksHint'), 'home.tasks_hint', { n: nf.format(state.diamondPerAd) });
     tx($('homeRef'), 'home.ref', { n: nf.format(state.referralDiamondReward) });
-    $('adReward').textContent = '+' + nf.format(state.diamondPerAd) + ' 💎';
+    adSlots.forEach((sl) => { sl.reward.textContent = '+' + nf.format(state.diamondPerAd) + ' 💎'; });
     $('taskRefReward').textContent = '+' + nf.format(state.referralDiamondReward) + ' 💎';
     $('refReward').textContent = '+' + nf.format(state.referralDiamondReward) + ' 💎';
-    if (!state.busy) $('plusOne').textContent = '+' + nf.format(state.diamondPerAd) + ' 💎';
+    if (!state.busy) adSlots.forEach((sl) => { sl.plus.textContent = '+' + nf.format(state.diamondPerAd) + ' 💎'; });
     updateConvertState();
   }
 
@@ -738,6 +818,31 @@
       box.replaceChildren(...(id === 'profOrders' ? orders.items.slice(0, 3) : orders.items).map(orderRow));
     }
     $('shopOrdersMore').hidden = !orders.cursor;
+    renderOrdersCount();
+  }
+
+  /** Profildagi «Buyurtmalarim» kartasi: yuklangan buyurtmalar soni (20 tadan ko'p bo'lsa «20+»). */
+  function renderOrdersCount() {
+    const n = $('pOrdersCount');
+    if (!n || !orders.loaded) return;
+    if (orders.cursor) { n.dataset.v = String(orders.items.length); n.textContent = nf.format(orders.items.length) + '+'; return; }
+    setNum(n, orders.items.length, false);
+  }
+
+  /** Karta bosilganda Do'kon sahifasidagi buyurtmalar ro'yxatiga o'tadi. */
+  function initOrdersCard() {
+    const card = $('profOrdersCard');
+    if (!card) return;
+    const open = () => {
+      go('shop');
+      requestAnimationFrame(() => {
+        const box = $('shopOrders');
+        const target = box && box.closest('.card');
+        if (target) target.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'start' });
+      });
+    };
+    card.addEventListener('click', open);
+    card.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); } });
   }
 
   async function loadOrders(more, force) {
@@ -792,12 +897,13 @@
     const gained = (data && Number.isInteger(data.reward) && data.reward) || state.diamondPerAd;
     say('watch.credited', 'good', { n: gained });
     coinHist.loadedAt = 0;
-    $('plusOne').textContent = '+' + nf.format(gained) + ' 💎';
+    const sl = adSlots[state.slot] || adSlots[0];
+    sl.plus.textContent = '+' + nf.format(gained) + ' 💎';
     haptic('success');
-    const btn = $('watch');
+    const btn = sl.btn;
     btn.classList.add('ok');
     setTimeout(() => btn.classList.remove('ok'), 1400);
-    const plus = $('plusOne');
+    const plus = sl.plus;
     plus.classList.remove('go');
     void plus.offsetWidth;
     plus.classList.add('go');
@@ -813,19 +919,23 @@
     return window.Adsgram || null;
   }
 
-  async function watchAd() {
+  async function watchAd(slotIdx) {
     if (state.busy || state.gated) return;
+    state.slot = Number.isInteger(slotIdx) && adSlots[slotIdx] ? slotIdx : 0; // qaysi kartadan bosildi
+    adSlots.forEach((sl) => { sl.msg.className = 'msg center'; plain(sl.msg, ''); });
     setBusy(true, 'watch.preparing');
     say('');
     haptic('light');
     if (atLeast('6.2')) tgTry(() => tg.enableClosingConfirmation());
     try {
-      const s = await api('POST', '/api/ads/session', undefined, { retry: false });
+      const s = await api('POST', '/api/ads/session', { slot: state.slot }, { retry: false });
       if (!ok(s)) { say(failKey(s), 'bad'); haptic('error'); return; }
 
       const cfg = s.data.adsgram || {};
-      const blockId = cfg.blockId || state.blockId;
-      if (blockId) state.blockId = blockId;
+      const ids = Array.isArray(cfg.blockIds) ? cfg.blockIds.filter(Boolean) : [];
+      if (cfg.blockId) state.blockId = cfg.blockId;
+      // Har bir karta o'z blockId siga ega bo'lishi mumkin (ADSGRAM_BLOCK_IDS); yetmasa aylanib takrorlanadi, bo'lmasa asosiy blockId
+      const blockId = (ids.length ? ids[state.slot % ids.length] : null) || cfg.blockId || state.blockId;
       // sad.min.js "defer" bilan yuklanadi — sekin tarmoqda hali tayyor bo'lmasligi mumkin, biroz kutamiz
       const sdk = await waitAdsgram(4000);
       if (!blockId || !sdk) { say('watch.unavailable', 'bad'); markNoAd(); return; }
@@ -924,13 +1034,18 @@
     m.className = 'msg center' + (kind ? ' ' + kind : '');
   }
 
+  /** Olmos -> Rush (qadamning karraligida bo'lsa), aks holda 0. Kurs va qadam serverdan keladi. */
+  function convRush(n) { return n > 0 && n % state.rate.sd === 0 ? (n / state.rate.sd) * state.rate.sr : 0; }
+
   function updateConvertState() {
     const b = $('convBtn');
     if (!b) return;
     const n = convAmount();
-    b.disabled = conv.busy || !state.loaded || n <= 0;
+    b.disabled = conv.busy || !state.loaded || n <= 0 || convRush(n) <= 0;
     b.classList.toggle('busy', conv.busy);
-    if (n > 0) tx($('convPreview'), 'tasks.conv_get', { n: nf.format(n * state.diamondToRush) }); else plain($('convPreview'), '');
+    if (n > 0 && convRush(n) > 0) tx($('convPreview'), 'tasks.conv_get', { n: nf.format(convRush(n)) });
+    else if (n > 0) tx($('convPreview'), 'tasks.conv_step', { n: nf.format(state.rate.sd) });
+    else plain($('convPreview'), '');
   }
 
   async function convertDiamonds() {
@@ -938,8 +1053,9 @@
     const n = convAmount();
     convSay('');
     if (!n) { convSay('tasks.conv_bad', 'bad'); haptic('error'); return; }
+    if (convRush(n) <= 0) { convSay('tasks.conv_step', 'bad', { n: nf.format(state.rate.sd) }); haptic('error'); return; }
     if (n > state.diamonds) { convSay('reason.INSUFFICIENT_FUNDS', 'bad'); haptic('error'); return; } // tezkor xabar; haqiqiy tekshiruv serverda
-    if (!(await confirmBox(tt('tasks.conv_confirm', { d: nf.format(n), r: nf.format(n * state.diamondToRush) })))) return;
+    if (!(await confirmBox(tt('tasks.conv_confirm', { d: nf.format(n), r: nf.format(convRush(n)) })))) return;
 
     conv.busy = true;
     updateConvertState();
@@ -950,7 +1066,7 @@
         conv.reqId = null;
         setBalances(r.data, true);
         coinHist.loadedAt = 0;
-        const got = r.data.converted && Number.isInteger(r.data.converted.rush) ? r.data.converted.rush : n * state.diamondToRush;
+        const got = r.data.converted && Number.isInteger(r.data.converted.rush) ? r.data.converted.rush : convRush(n);
         $('convAmount').value = '';
         convSay('');
         toast(tt('tasks.conv_done', { d: nf.format(n), r: nf.format(got) }), false);
@@ -985,7 +1101,8 @@
       updateConvertState();
     });
     $('convMax').addEventListener('click', () => {
-      input.value = state.diamonds > 0 ? String(state.diamonds) : '';
+      const maxN = Math.floor(state.diamonds / state.rate.sd) * state.rate.sd; // qadamning karraligidagi eng katta miqdor
+      input.value = maxN > 0 ? String(maxN) : '';
       conv.reqId = null;
       haptic('select');
       convSay('');
@@ -1222,12 +1339,15 @@
   async function init() {
     tgSetup();
     initTheme();
+    ensureAdSlots(DEFAULT_AD_SLOTS);
     initLang();
     document.querySelectorAll('[data-go]').forEach((b) => b.addEventListener('click', () => go(b.dataset.go)));
-    $('watch').addEventListener('click', () => watchAd());
+    $('watch').addEventListener('click', () => watchAd(0));
+    $('topWatch').addEventListener('click', () => { const i = freeSlotIndex(); if (i >= 0) watchAd(i); });
     initConvert();
     $('shopOrdersMore').addEventListener('click', () => loadOrders(true).catch(() => {}));
     initReferral();
+    initOrdersCard();
     initSend();
     initSubGate();
     $('coinHistMore').addEventListener('click', () => loadCoinHistory(true).catch(() => {}));

@@ -159,7 +159,7 @@
 
   <header class="top">
     <div class="brand"><img class="logo" src="/assets/Logo.png" alt="" width="28" height="28" onerror="this.remove()" /><b>AdRush</b></div>
-    <div class="top-r"><div class="chip coin-chip" id="topDiamondChip" title="Olmos balansi" data-i18n-title="top.diamond_title">💎 <b id="topDiamonds">0</b></div><div class="chip coin-chip" id="topCoinChip" title="Rush Coin balansi" data-i18n-title="top.coin_title">🪙 <b id="topCoins">0</b></div></div>
+    <div class="top-r"><button type="button" class="chip watch-pill" id="topWatch" disabled title="Reklama ko‘ring: +1 olmos" aria-label="Reklama ko‘ring: +1 olmos" data-i18n-title="top.watch_title" data-i18n-aria="top.watch_title"><span class="wp-ico" aria-hidden="true">💎</span><b id="topWatchLabel">+1</b></button><div class="chip coin-chip" id="topDiamondChip" title="Olmos balansi" data-i18n-title="top.diamond_title">💎 <b id="topDiamonds">0</b></div><div class="chip coin-chip" id="topCoinChip" title="Rush Coin balansi" data-i18n-title="top.coin_title">🪙 <b id="topCoins">0</b></div></div>
   </header>
 
   <main class="wrap" id="app">
@@ -202,7 +202,7 @@
 
       <div class="card coin" id="coinCard">
         <div class="coin-top">
-          <div><span class="muted" id="homeRate">1 💎 = 12 🪙</span></div>
+          <div><span class="muted" id="homeRate">12 💎 = 4 🪙</span></div>
           <button class="link" type="button" data-go="profile" data-i18n="common.history_arrow">Tarix →</button>
         </div>
         <div class="muted" id="homeTasksHint">—</div>
@@ -225,9 +225,9 @@
         <div class="card stat"><span class="muted" data-i18n="home.coins">🪙 Rush Coin</span><b id="tasksCoins">0</b></div>
       </div>
 
-      <div class="card task" id="taskAd">
+      <div class="card task ad-slot" id="taskAd">
         <div class="task-head">
-          <div><b data-i18n="tasks.ad_title">📺 Rewarded reklama</b><span class="muted" data-i18n="tasks.ad_hint">Reklamani oxirigacha ko‘ring — server tasdiqlagach olmos beriladi.</span></div>
+          <div><b><span data-i18n="tasks.ad_title">📺 Rewarded reklama</span> <span class="slot-n" hidden>#1</span></b><span class="muted" data-i18n="tasks.ad_hint">Reklamani oxirigacha ko‘ring — server tasdiqlagach olmos beriladi.</span></div>
           <span class="chip-sm" id="adReward">+1 💎</span>
         </div>
         <div class="cta-wrap">
@@ -248,7 +248,7 @@
       <div class="card task" id="taskConvert">
         <div class="task-head">
           <div><b data-i18n="tasks.conv_title">💎 → 🪙 almashtirish</b><span class="muted" data-i18n="tasks.conv_hint">Olmosni Rush Coin’ga almashtiring. Kurs serverda belgilanadi.</span></div>
-          <span class="chip-sm" id="convRate">1 💎 = 12 🪙</span>
+          <span class="chip-sm" id="convRate">12 💎 = 4 🪙</span>
         </div>
         <div class="conv-row">
           <input id="convAmount" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="9" placeholder="Olmos miqdori" autocomplete="off" aria-label="Almashtiriladigan olmos miqdori" data-i18n-placeholder="tasks.conv_ph" data-i18n-aria="tasks.conv_aria" />
@@ -295,6 +295,7 @@
       </div>
       <div class="grid2">
         <div class="card stat"><span class="muted" data-i18n="profile.valid_ads">📺 Valid reklama</span><b id="pAdsWatched">0</b></div>
+        <div class="card stat" id="profOrdersCard" role="button" tabindex="0"><span class="muted" data-i18n="profile.orders_title">📦 Buyurtmalarim</span><b id="pOrdersCount">0</b></div>
       </div>
       <div class="card ref" id="refCard">
         <div class="card-head"><b data-i18n="ref.title">👥 Referallar</b><span class="chip-sm" id="refReward">+5 💎</span></div>

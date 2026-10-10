@@ -113,6 +113,7 @@ model AdSession {
   id           String          @id @default(uuid()) @db.Uuid
   userId       Int
   status       AdSessionStatus @default(PENDING)
+  slot         Int             @default(0) // Vazifalardagi reklama kartasi raqami (0..AD_SLOTS-1): cooldown har karta uchun alohida
   createdAt    DateTime        @default(now())
   expiresAt    DateTime
   claimedAt    DateTime?

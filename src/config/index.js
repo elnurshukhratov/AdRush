@@ -106,6 +106,8 @@ const config = Object.freeze({
 
   adsgram: Object.freeze({
     blockId: (process.env.ADSGRAM_BLOCK_ID || '').trim(),
+    // Har bir reklama kartasi uchun alohida AdsGram blockId (vergul bilan). Bo'sh yoki kam bo'lsa — aylanib takrorlanadi / asosiy blockId ishlatiladi.
+    blockIds: Object.freeze(parseList(process.env.ADSGRAM_BLOCK_IDS)),
     verifyMode, // 'server_confirmed' | 'client_session'
     rewardToken, // bizning o'z tokenimiz (AdsGram imzo bermaydi)
     callbackIpAllowlist: Object.freeze(parseList(process.env.ADSGRAM_CALLBACK_IP_ALLOWLIST)),
@@ -136,7 +138,15 @@ const config = Object.freeze({
   diamond: Object.freeze({
     perAd: int('DIAMOND_PER_AD', 1, { min: 1 }), // 1 ta valid reklama = +N olmos
     referralReward: int('REFERRAL_DIAMOND_REWARD', 5, { min: 1 }), // yangi taklif qilingan user uchun taklif qiluvchiga (olmos)
-    toRush: int('DIAMOND_TO_RUSH', 12, { min: 1 }), // 1 olmos = N Rush Coin
+    // Almashtirish kursi: DIAMOND_CONVERT_DIAMONDS olmos = DIAMOND_CONVERT_RUSH Rush Coin (standart: 12 💎 = 4 🪙).
+    // Almashtirish eng kichik butun qadamlarda bo'ladi (12:4 -> har 3 olmos = 1 Rush Coin), shuning uchun Rush doim butun son.
+    convert: (() => {
+      const d = int('DIAMOND_CONVERT_DIAMONDS', 12, { min: 1 });
+      const r = int('DIAMOND_CONVERT_RUSH', 4, { min: 1 });
+      const gcd = (a, b) => (b ? gcd(b, a % b) : a);
+      const g = gcd(d, r);
+      return Object.freeze({ diamonds: d, rush: r, stepDiamonds: d / g, stepRush: r / g });
+    })(),
   }),
 
   // Rush Coin (ichki valyuta).
@@ -154,7 +164,8 @@ const config = Object.freeze({
     rewardTestMode, // faqat development/test (production'da config xato beradi)
     sessionTtlMs: int('AD_SESSION_TTL_SEC', 600, { min: 30 }) * 1000,
     minDurationMs: int('AD_MIN_DURATION_MS', 8000),
-    cooldownMs: int('AD_COOLDOWN_MS', 10000),
+    cooldownMs: int('AD_COOLDOWN_MS', 5000), // bitta karta uchun: olmos berilgach shuncha vaqtdan keyin shu kartadan qayta ko'rish mumkin
+    slots: Math.min(int('AD_SLOTS', 5, { min: 1 }), 10), // Vazifalardagi reklama kartalari soni (1..10)
     dailyCap: int('AD_DAILY_CAP', 0), // 0 = cheklovsiz
   }),
 });

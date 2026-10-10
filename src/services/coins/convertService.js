@@ -7,9 +7,9 @@ const { isUniqueViolation } = require('../../utils/dbErrors');
 const { COIN_TX, CURRENCY, TX_OPTS, TxAbort, fail, applyCoins, getBalances } = require('./coinService');
 
 /**
- * Olmosni Rush Coin ga almashtirish: 1 olmos = config.diamond.toRush Rush Coin.
+ * Olmosni Rush Coin ga almashtirish: config.diamond.convert kursi bo'yicha (standart 12 olmos = 4 Rush Coin, qadam: 3 olmos = 1 Rush).
  * Klientdan faqat `diamonds` (nechta olmos) va `requestId` keladi; Rush miqdori serverda hisoblanadi.
- * Bitta tranzaksiyada: user qulfi -> olmos -N (CONVERT_OUT) -> Rush +N*kurs (CONVERT_IN). Ikkala ledger yozuvi
+ * Bitta tranzaksiyada: user qulfi -> olmos -N (CONVERT_OUT) -> Rush +N/qadam*qadamRush (CONVERT_IN). Ikkala ledger yozuvi
  * refType='CONVERT' va bir xil refId (requestId) bilan bog'langan. Idempotent: bir xil requestId ikkinchi marta DUPLICATE_REQUEST.
  * Qaytadi: { success:true, diamonds, rushCoins, converted:{ diamonds, rush } } yoki { success:false, reason, diamonds, rushCoins }.
  *  reason: INSUFFICIENT_FUNDS | DUPLICATE_REQUEST
@@ -18,7 +18,9 @@ async function convertDiamonds(user, diamonds, requestId) {
   if (!Number.isSafeInteger(diamonds) || diamonds <= 0) throw new Error('convertDiamonds: diamonds musbat butun son bo\'lishi kerak');
   if (!requestId) throw new Error('convertDiamonds: requestId majburiy');
 
-  const rush = diamonds * config.diamond.toRush;
+  const { stepDiamonds, stepRush } = config.diamond.convert;
+  if (diamonds % stepDiamonds !== 0) throw new Error(`convertDiamonds: olmos ${stepDiamonds} ning karraligida bo'lishi kerak`);
+  const rush = (diamonds / stepDiamonds) * stepRush;
 
   try {
     return await prisma.$transaction(async (tx) => {

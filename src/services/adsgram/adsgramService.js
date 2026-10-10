@@ -67,6 +67,7 @@ function parseRewardCallback(req) {
 function getClientConfig() {
   return {
     blockId: config.adsgram.blockId || null,
+    blockIds: config.adsgram.blockIds,
     verifyMode: config.adsgram.verifyMode,
   };
 }

@@ -66,13 +66,14 @@ async function claimReward(user, sessionId) {
     }
 
     if (!testMode && config.ads.cooldownMs > 0) {
-      const last = await tx.adReward.findFirst({
-        where: { userId: user.id },
-        orderBy: { createdAt: 'desc' },
-        select: { createdAt: true },
+      // Cooldown HAR BIR KARTA (slot) uchun alohida: shu kartadan oxirgi hisoblangan reklama vaqti
+      const last = await tx.adSession.findFirst({
+        where: { userId: user.id, slot: session.slot, status: 'REWARDED', rewardedAt: { not: null } },
+        orderBy: { rewardedAt: 'desc' },
+        select: { rewardedAt: true },
       });
       if (last) {
-        const sinceLast = now.getTime() - last.createdAt.getTime();
+        const sinceLast = now.getTime() - last.rewardedAt.getTime();
         if (sinceLast < config.ads.cooldownMs) {
           // Sessiya PENDING qoladi — klient biroz kutib qayta urinishi mumkin
           return fail('COOLDOWN', { retryAfterMs: config.ads.cooldownMs - sinceLast });

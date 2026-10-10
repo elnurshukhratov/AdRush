@@ -60,7 +60,7 @@ const history = asyncHandler(async (req, res) => {
 
 /**
  * POST /api/coins/convert { diamonds, requestId }
- * Olmosni Rush Coin ga almashtiradi (1 olmos = DIAMOND_TO_RUSH Rush). Javob: { success, diamonds, rushCoins (yangi balanslar), converted:{ diamonds, rush } }.
+ * Olmosni Rush Coin ga almashtiradi (kurs: config.diamond.convert, standart 12 olmos = 4 Rush; olmos qadamning karraligida bo'lishi shart). Javob: { success, diamonds, rushCoins (yangi balanslar), converted:{ diamonds, rush } }.
  * Xatolar standart formatda: INSUFFICIENT_FUNDS | DUPLICATE_REQUEST | INVALID_AMOUNT.
  */
 const convert = asyncHandler(async (req, res) => {
@@ -72,6 +72,8 @@ const convert = asyncHandler(async (req, res) => {
     throw parsed.error;
   }
   const { diamonds, requestId } = parsed.data;
+  const step = config.diamond.convert.stepDiamonds;
+  if (diamonds % step !== 0) throw new ApiError(400, 'INVALID_AMOUNT', 'Miqdor noto\'g\'ri', { min: step, max: CONVERT_MAX, step });
 
   const result = await convertDiamonds(req.auth.user, diamonds, requestId);
   res.set('Cache-Control', 'private, no-store');
