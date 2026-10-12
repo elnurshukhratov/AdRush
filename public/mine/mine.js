@@ -588,8 +588,16 @@
       else if (off) tx(u.label, 'watch.off');
       else if (cd > 0) tx(u.label, 'watch.cooldown', { n: cd });
       else if (noAd > 0) tx(u.label, 'watch.no_ad', { n: noAd });
-      else tx(u.label, 'watch.label', { n: state.diamondPerAd });
+      else tx(u.label, 'watch.task_btn');
     });
+    // Mavjud emas kartalar ro'yxat oxiriga tushadi; tepada nechta video tayyorligi ko'rsatiladi
+    const slots = adUnits.filter((u) => u.placement === 'task');
+    slots.forEach((u) => { u.card.style.order = ready && u.enabled === false ? '1' : '0'; });
+    const rc = $('adReadyCount');
+    if (rc) {
+      rc.hidden = !ready;
+      if (ready) tx(rc, 'tasks.ad_ready', { n: slots.filter((u) => u.enabled !== false).length });
+    }
     updateConvertState();
   }
 

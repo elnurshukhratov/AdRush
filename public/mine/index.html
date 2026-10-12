@@ -225,50 +225,65 @@
         <div class="card stat"><span class="muted" data-i18n="home.coins">🪙 Rush Coin</span><b id="tasksCoins">0</b></div>
       </div>
 
-      <div class="card task ad-slot" data-provider="adsgram" data-placement="task">
-        <div class="task-head">
-          <div class="prov">
-            <span class="prov-logo" aria-hidden="true">A</span>
-            <div><b>AdsGram</b><span class="muted" data-i18n="tasks.ad_hint">Reklamani oxirigacha ko‘ring — server tasdiqlagach olmos beriladi.</span></div>
+      <div class="sec-head">
+        <h3 data-i18n="tasks.sec_ads">📺 Video vazifalar</h3>
+        <span class="chip-sm" id="adReadyCount" hidden></span>
+      </div>
+      <div class="task-list" id="adTaskList">
+        <div class="card task ad-slot" data-provider="adsgram" data-placement="task">
+          <div class="task-head">
+            <div class="prov">
+              <span class="prov-logo" aria-hidden="true"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13a1 1 0 0 0 1.5.86l10.5-6.5a1 1 0 0 0 0-1.72L9.5 4.64A1 1 0 0 0 8 5.5Z" fill="currentColor"/></svg></span>
+              <div>
+                <b data-i18n="tasks.video" data-i18n-vars='{"n":1}'>Video vazifa 1</b>
+                <span class="muted" data-i18n="tasks.video_hint">Oxirigacha ko‘ring</span>
+                <span class="chip-sm">+1 💎</span>
+              </div>
+            </div>
           </div>
-          <span class="chip-sm">+1 💎</span>
+          <div class="cta-wrap">
+            <button class="cta" type="button" disabled><span data-i18n="watch.loading">Yuklanmoqda…</span></button>
+            <span class="plus" aria-hidden="true">+1 💎</span>
+          </div>
+          <p class="msg center" role="status" aria-live="polite"></p>
         </div>
-        <div class="cta-wrap">
-          <button class="cta" type="button" disabled><span data-i18n="watch.loading">Yuklanmoqda…</span></button>
-          <span class="plus" aria-hidden="true">+1 💎</span>
+        <div class="card task ad-slot" data-provider="monetag" data-placement="task">
+          <div class="task-head">
+            <div class="prov">
+              <span class="prov-logo" aria-hidden="true"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13a1 1 0 0 0 1.5.86l10.5-6.5a1 1 0 0 0 0-1.72L9.5 4.64A1 1 0 0 0 8 5.5Z" fill="currentColor"/></svg></span>
+              <div>
+                <b data-i18n="tasks.video" data-i18n-vars='{"n":2}'>Video vazifa 2</b>
+                <span class="muted" data-i18n="tasks.video_hint">Oxirigacha ko‘ring</span>
+                <span class="chip-sm">+1 💎</span>
+              </div>
+            </div>
+          </div>
+          <div class="cta-wrap">
+            <button class="cta" type="button" disabled><span data-i18n="watch.loading">Yuklanmoqda…</span></button>
+            <span class="plus" aria-hidden="true">+1 💎</span>
+          </div>
+          <p class="msg center" role="status" aria-live="polite"></p>
         </div>
-        <p class="msg center" role="status" aria-live="polite"></p>
+        <div class="card task ad-slot" data-provider="onclicka" data-placement="task">
+          <div class="task-head">
+            <div class="prov">
+              <span class="prov-logo" aria-hidden="true"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13a1 1 0 0 0 1.5.86l10.5-6.5a1 1 0 0 0 0-1.72L9.5 4.64A1 1 0 0 0 8 5.5Z" fill="currentColor"/></svg></span>
+              <div>
+                <b data-i18n="tasks.video" data-i18n-vars='{"n":3}'>Video vazifa 3</b>
+                <span class="muted" data-i18n="tasks.video_hint">Oxirigacha ko‘ring</span>
+                <span class="chip-sm">+1 💎</span>
+              </div>
+            </div>
+          </div>
+          <div class="cta-wrap">
+            <button class="cta" type="button" disabled><span data-i18n="watch.loading">Yuklanmoqda…</span></button>
+            <span class="plus" aria-hidden="true">+1 💎</span>
+          </div>
+          <p class="msg center" role="status" aria-live="polite"></p>
+        </div>
       </div>
 
-      <div class="card task ad-slot" data-provider="monetag" data-placement="task">
-        <div class="task-head">
-          <div class="prov">
-            <span class="prov-logo" aria-hidden="true">M</span>
-            <div><b>Monetag</b></div>
-          </div>
-          <span class="chip-sm">+1 💎</span>
-        </div>
-        <div class="cta-wrap">
-          <button class="cta" type="button" disabled><span data-i18n="watch.loading">Yuklanmoqda…</span></button>
-          <span class="plus" aria-hidden="true">+1 💎</span>
-        </div>
-        <p class="msg center" role="status" aria-live="polite"></p>
-      </div>
-
-      <div class="card task ad-slot" data-provider="onclicka" data-placement="task">
-        <div class="task-head">
-          <div class="prov">
-            <span class="prov-logo" aria-hidden="true">O</span>
-            <div><b>OnClickA</b></div>
-          </div>
-          <span class="chip-sm">+1 💎</span>
-        </div>
-        <div class="cta-wrap">
-          <button class="cta" type="button" disabled><span data-i18n="watch.loading">Yuklanmoqda…</span></button>
-          <span class="plus" aria-hidden="true">+1 💎</span>
-        </div>
-        <p class="msg center" role="status" aria-live="polite"></p>
-      </div>
+      <div class="sec-head"><h3 data-i18n="tasks.sec_more">🎁 Qo‘shimcha</h3></div>
 
       <div class="card task" id="taskRef">
         <div class="task-head">
