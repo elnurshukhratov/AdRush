@@ -12,6 +12,7 @@ const coinsRoutes = require('./coins.routes');
 const referralsRoutes = require('./referrals.routes');
 const subscriptionRoutes = require('./subscription.routes');
 const shopRoutes = require('./shop.routes');
+const walletRoutes = require('./wallet.routes');
 
 const router = express.Router();
 
@@ -26,5 +27,6 @@ router.use('/coins', coinsRoutes);
 router.use('/referrals', referralsRoutes);
 router.use('/subscription', subscriptionRoutes);
 router.use('/shop', shopRoutes);
+router.use('/wallet', walletRoutes);
 
 module.exports = router;

@@ -37,6 +37,7 @@ const STRINGS = {
     blocked: '⛔ Sizning akkauntingiz cheklangan. Savol bo\'lsa administratorga murojaat qiling.',
     shop_order_delivered: '✅ <b>Buyurtma yetkazildi</b>\n\n🛍 {title}\n🆔 Buyurtma: #{id}',
     shop_order_cancelled: '❌ <b>Buyurtma bekor qilindi</b>\n\n🛍 {title}\n🆔 Buyurtma: #{id}\n🪙 {price} Rush Coin balansingizga qaytarildi.',
+    wallet_topup_ok: '✅ <b>Hamyon to\'ldirildi</b>\n\n💰 +{amount} so\'m\n💳 Balans: {balance} so\'m',
   },
   en: {
     pick_language: '🌐 Tilni tanlang / Choose language / Выберите язык',
@@ -59,6 +60,7 @@ const STRINGS = {
     blocked: '⛔ Your account has been restricted. If you have any questions, please contact the administrator.',
     shop_order_delivered: '✅ <b>Order delivered</b>\n\n🛍 {title}\n🆔 Order: #{id}',
     shop_order_cancelled: '❌ <b>Order cancelled</b>\n\n🛍 {title}\n🆔 Order: #{id}\n🪙 {price} Rush Coin has been returned to your balance.',
+    wallet_topup_ok: '✅ <b>Wallet topped up</b>\n\n💰 +{amount} UZS\n💳 Balance: {balance} UZS',
   },
   ru: {
     pick_language: '🌐 Tilni tanlang / Choose language / Выберите язык',
@@ -81,6 +83,7 @@ const STRINGS = {
     blocked: '⛔ Ваш аккаунт ограничен. Если есть вопросы, обратитесь к администратору.',
     shop_order_delivered: '✅ <b>Заказ доставлен</b>\n\n🛍 {title}\n🆔 Заказ: #{id}',
     shop_order_cancelled: '❌ <b>Заказ отменён</b>\n\n🛍 {title}\n🆔 Заказ: #{id}\n🪙 {price} Rush Coin возвращено на ваш баланс.',
+    wallet_topup_ok: '✅ <b>Кошелёк пополнен</b>\n\n💰 +{amount} сум\n💳 Баланс: {balance} сум',
   },
 };
 

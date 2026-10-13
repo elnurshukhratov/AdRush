@@ -41,7 +41,7 @@ const setMyLanguage = asyncHandler(async (req, res) => {
 /**
  * GET /api/users/me/stats
  * Foydalanuvchi faqat initData orqali aniqlanadi (URL/body dagi id ishlatilmaydi).
- * Balanslar (diamonds, rushCoins) va kurslar DB/configdan keladi.
+ * Balanslar (diamonds, rushCoins, balanceUzs) va kurslar DB/configdan keladi.
  */
 const myStats = asyncHandler(async (req, res) => {
   const userId = req.auth.user.id;
@@ -56,6 +56,7 @@ const myStats = asyncHandler(async (req, res) => {
     success: true,
     diamonds: balances.diamonds,
     rushCoins: balances.rushCoins,
+    balanceUzs: balances.balanceUzs, // so'm balansi (butun so'm)
     adsWatched, // jami valid reklamalar (olmos bergan)
     diamondPerAd: config.diamond.perAd,
     adSlots: config.ads.slots, // Vazifalardagi reklama kartalari soni

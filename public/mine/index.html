@@ -170,16 +170,8 @@
       <p class="muted" id="gateText" data-i18n="gate.open.text">AdRush faqat Telegram Mini App sifatida ishlaydi.</p>
       <!-- Majburiy kanalga obuna (mine.js gate('subscribe') ko'rsatadi) -->
       <div id="subBox" hidden style="width:100%;max-width:420px;margin-top:14px">
-        <button type="button" class="card" id="subCard" style="display:flex;align-items:center;gap:12px;width:100%;margin:0;text-align:left;font:inherit;color:inherit;cursor:pointer">
-          <span class="thumb" aria-hidden="true">📢</span>
-          <span style="flex:1;min-width:0">
-            <b id="subTitle" style="display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">—</b>
-            <small class="muted" id="subUser"></small>
-          </span>
-          <b aria-hidden="true" style="font-size:20px">↗</b>
-        </button>
+        <div id="subList" style="display:flex;flex-direction:column;gap:8px;max-height:46vh;overflow-y:auto;-webkit-overflow-scrolling:touch"></div>
         <div class="btns" style="justify-content:center">
-          <button type="button" class="btn" id="subOpen" data-i18n="gate.sub.open">Kanalga o‘tish</button>
           <button type="button" class="btn sec" id="subCheck" data-i18n="gate.sub.check">Obunani tekshirish</button>
         </div>
         <p class="msg center" id="subMsg" role="status"></p>
@@ -341,6 +333,12 @@
         <div class="card stat"><span class="muted" data-i18n="profile.diamonds">💎 Olmos</span><b id="pDiamonds">0</b></div>
         <div class="card stat"><span class="muted" data-i18n="profile.coins">🪙 Rush Coin</span><b id="pCoins">0</b></div>
       </div>
+      <div id="walletCard" hidden>
+        <div class="card stat" id="walletStat" role="button" tabindex="0" style="position:relative">
+          <span class="muted" data-i18n="wallet.balance">💵 So‘m balans</span><b id="pUzs">0</b>
+          <span class="btn sm" aria-hidden="true" style="position:absolute;top:12px;right:12px">+</span>
+        </div>
+      </div>
       <div class="grid2">
         <div class="card stat"><span class="muted" data-i18n="profile.valid_ads">📺 Valid reklama</span><b id="pAdsWatched">0</b></div>
         <div class="card stat" id="profOrdersCard" role="button" tabindex="0"><span class="muted" data-i18n="profile.orders_title">📦 Buyurtmalarim</span><b id="pOrdersCount">0</b></div>
@@ -382,7 +380,7 @@
       <div class="card">
         <div class="field">
           <label for="sendAmount" data-i18n="send.amount">Miqdor</label>
-          <input id="sendAmount" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="9" placeholder="Rush Coin miqdori" autocomplete="off" data-i18n-placeholder="send.amount_ph" />
+          <input id="sendAmount" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="7" placeholder="Rush Coin miqdori" autocomplete="off" data-i18n-placeholder="send.amount_ph" />
         </div>
         <div class="field">
           <label for="sendTo" data-i18n="send.to">Qabul qiluvchi ID</label>
@@ -390,6 +388,40 @@
         </div>
         <button id="sendBtn" class="btn block" type="button" disabled data-i18n="send.btn">💸 Yuborish</button>
         <p id="sendMsg" class="msg" role="status" aria-live="polite"></p>
+      </div>
+    </section>
+
+    <!-- BUY: so'm balansdan Rush Coin sotib olish. Profildan ochiladi (menyuda tab yo'q), Telegram BackButton profilga qaytaradi -->
+    <section class="view" id="view-buy" data-view="buy" hidden>
+      <div class="hrow"><h2 data-i18n="wallet.buy_title">🪙 Tanga sotib olish</h2><span class="chip-sm" id="walletRate"></span></div>
+      <div class="grid2">
+        <div class="card stat" style="position:relative"><span class="muted" data-i18n="wallet.balance">💵 So‘m balans</span><b id="buyUzs">0</b>
+          <button type="button" class="btn sm" id="walletPlus" style="position:absolute;top:12px;right:12px" aria-label="Hamyonni to‘ldirish" data-i18n-aria="wallet.plus_aria">+</button>
+        </div>
+        <div class="card stat"><span class="muted" data-i18n="profile.coins">🪙 Rush Coin</span><b id="buyCoinsBal">0</b></div>
+      </div>
+        <div class="card" id="topupPanel" hidden>
+          <div class="field">
+            <label for="topupAmount" id="topupLabel" data-i18n="wallet.topup_label" data-i18n-vars='{"n":5000}'>To‘ldirish summasi</label>
+            <input id="topupAmount" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="10" placeholder="So‘m miqdori" autocomplete="off" data-i18n-placeholder="wallet.topup_ph" />
+          </div>
+          <div class="btns">
+            <button type="button" class="btn sm" id="topupGo" disabled data-i18n="wallet.topup_btn">💳 To‘lash</button>
+            <button type="button" class="btn sec sm" id="topupCancel" data-i18n="wallet.cancel">Bekor qilish</button>
+          </div>
+          <p id="topupMsg" class="msg" role="status" aria-live="polite"></p>
+        </div>
+      <div class="card">
+        <p class="muted" data-i18n="wallet.buy_hint">Tangani faqat hamyondagi so‘m hisobidan sotib olasiz.</p>
+        <div class="btns" id="coinPacks"></div>
+        <div class="field" style="margin-top:14px">
+          <label for="coinAmount" id="coinLabel" data-i18n="wallet.coin_label" data-i18n-vars='{"n":500}'>Boshqa miqdor</label>
+          <input id="coinAmount" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="9" placeholder="Tanga miqdori" autocomplete="off" data-i18n-placeholder="wallet.coin_ph" />
+        </div>
+        <div class="muted center" id="buyPreview" aria-live="polite"></div>
+        <button id="buyBtn" class="btn block" type="button" disabled data-i18n="wallet.buy_btn">🪙 Sotib olish</button>
+        <p id="buyMsg" class="msg center" role="status" aria-live="polite"></p>
+        <button id="buyTopup" class="btn sec sm block" type="button" hidden data-i18n="wallet.buy_topup">➕ Hamyonni to‘ldirish</button>
       </div>
     </section>
   </main>
@@ -402,8 +434,8 @@
     <button type="button" class="tab" data-go="profile"><i><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></i><span data-i18n="nav.profile">Profil</span></button>
   </nav>
 
-  <script src="i18n.js?v=12"></script>
-  <script src="mine.js?v=22"></script>
+  <script src="i18n.js?v=15"></script>
+  <script src="mine.js?v=26"></script>
   <script src="liquid-glass.js?v=6"></script>
   <script>
     /* Splash: ilova tayyor bo'lguncha (kamida 1.6s, ko'pi bilan 9s) bot animatsiyasi ko'rsatiladi */

@@ -38,6 +38,26 @@
   const nfCache = {};
   const nf = { format: (n) => (nfCache[i18n.locale] || (nfCache[i18n.locale] = new Intl.NumberFormat(i18n.locale))).format(n) };
   const nfFixed = new Intl.NumberFormat('en-US');
+  // Katta raqamlar qisqa ko'rinishda: 1000 → 1k, 1 500 000 → 1.5M (yaxlitlanmaydi, pastga qirqiladi — balans ortiq ko'rinmasin).
+  const COMPACT_IDS = new Set(['topDiamonds', 'homeDiamonds', 'tasksDiamonds', 'pDiamonds', 'topCoins', 'homeCoins', 'tasksCoins', 'pCoins', 'pUzs']);
+  const cfCache = {};
+  function compactFmt(n) {
+    const v = Number(n) || 0;
+    const abs = Math.abs(v);
+    if (abs < 1000) return nf.format(v);
+    const units = [[1e9, 'B'], [1e6, 'M'], [1e3, 'k']];
+    const u = units.find((x) => abs >= x[0]);
+    const q = abs / u[0];
+    const dec = q < 10 ? 2 : q < 100 ? 1 : 0;
+    const k = Math.pow(10, dec);
+    const cut = Math.floor(q * k + 1e-9) / k;
+    const f = cfCache[i18n.locale + dec] || (cfCache[i18n.locale + dec] = new Intl.NumberFormat(i18n.locale, { maximumFractionDigits: dec, useGrouping: false }));
+    return (v < 0 ? '-' : '') + f.format(cut) + u[1];
+  }
+  function numText(node, n) {
+    if ((node.id && COMPACT_IDS.has(node.id)) || node.dataset.compact) { node.title = nf.format(n); return compactFmt(n); }
+    return nf.format(n);
+  }
   const reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   const DATE_FMT = { dateStyle: 'medium', timeStyle: 'short' };
 
@@ -61,10 +81,10 @@
   const state = {
     view: 'home', refreshSec: 15, busy: false, busyLabel: '',
     cooldownMs: 5000, pollId: null, active: null, adsLoaded: false, adsAt: 0, adsBusy: false,
-    loaded: false, statsOk: false, isAdmin: false, backFn: null, gated: false, gateKind: null, subChannel: null, subBusy: false,
+    loaded: false, statsOk: false, isAdmin: false, backFn: null, gated: false, gateKind: null, subChannels: [], subBusy: false,
     coinItems: [], shopItems: [],
     // Olmos / Rush Coin: hammasi serverdan keladi (faqat ko'rsatish uchun saqlanadi)
-    tgId: '', diamonds: 0, coins: 0, adsWatched: 0, diamondPerAd: 1, rate: { d: 12, r: 4, sd: 3, sr: 1 }, referralDiamondReward: 5,
+    tgId: '', diamonds: 0, coins: 0, uzs: 0, adsWatched: 0, diamondPerAd: 1, rate: { d: 12, r: 4, sd: 3, sr: 1 }, referralDiamondReward: 5,
   };
 
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -85,7 +105,7 @@
   function onAuthProblem(res) {
     if (res.status === 401) gate('open');
     else if (res.status === 403 && res.data && res.data.reason === 'USER_BLOCKED') gate('blocked');
-    else if (res.status === 403 && res.data && res.data.reason === 'SUBSCRIPTION_REQUIRED') gate('subscribe', res.data.channel);
+    else if (res.status === 403 && res.data && res.data.reason === 'SUBSCRIPTION_REQUIRED') gate('subscribe', channelsOf(res.data));
   }
 
   /**
@@ -188,12 +208,12 @@
     const to = Number(value) || 0;
     const from = node.dataset.v === undefined ? NaN : Number(node.dataset.v);
     node.dataset.v = String(to);
-    if (Number.isNaN(from) || from === to || reduceMotion) { node.textContent = nf.format(to); return; }
+    if (Number.isNaN(from) || from === to || reduceMotion) { node.textContent = numText(node, to); return; }
     const t0 = performance.now();
     const dur = 450;
     const step = (t) => {
       const k = Math.min(1, (t - t0) / dur);
-      node.textContent = nf.format(Math.round(from + (to - from) * (1 - Math.pow(1 - k, 3))));
+      node.textContent = numText(node, Math.round(from + (to - from) * (1 - Math.pow(1 - k, 3))));
       if (k < 1) requestAnimationFrame(step);
     };
     requestAnimationFrame(step);
@@ -211,9 +231,13 @@
     }
     if (Number.isInteger(d.rushCoins)) {
       state.coins = d.rushCoins;
-      ['topCoins', 'homeCoins', 'tasksCoins', 'pCoins', 'sendBal'].forEach((id) => { const n = $(id); if (n) setNum(n, d.rushCoins, false); });
+      ['topCoins', 'homeCoins', 'tasksCoins', 'pCoins', 'sendBal', 'buyCoinsBal'].forEach((id) => { const n = $(id); if (n) setNum(n, d.rushCoins, false); });
       const chip = $('topCoinChip');
       if (bump && chip && !reduceMotion) { chip.classList.remove('bump'); void chip.offsetWidth; chip.classList.add('bump'); }
+    }
+    if (Number.isInteger(d.balanceUzs)) { // so'm balans (faqat Profil hamyoni)
+      state.uzs = d.balanceUzs;
+      ['pUzs', 'buyUzs'].forEach((id) => { const n = $(id); if (n) setNum(n, d.balanceUzs, bump); });
     }
   }
   /** Faqat Rush Coin yangilanadigan joylar (tanga yuborish) uchun qisqa yo'l. */
@@ -332,8 +356,14 @@
   function setBack(fn) { state.backFn = fn || null; applyBack(); }
 
   // ---------- Global holat (Telegram tashqarisida / bloklangan) ----------
-  function gate(kind, channel) {
-    if (kind === 'subscribe' && channel) state.subChannel = channel;
+  /** Serverdan kelgan javobdan kanallar ro'yxati (eski `channel` formatiga ham mos). */
+  function channelsOf(data) {
+    if (data && Array.isArray(data.channels) && data.channels.length) return data.channels;
+    return data && data.channel ? [data.channel] : [];
+  }
+
+  function gate(kind, channels) {
+    if (kind === 'subscribe' && Array.isArray(channels) && channels.length) state.subChannels = channels;
     if (state.gated) { if (kind === 'subscribe' && state.gateKind === 'subscribe') fillSubGate(); return; }
     state.gated = true;
     state.gateKind = kind;
@@ -357,19 +387,44 @@
     return ch.inviteUrl || (ch.username ? 'https://t.me/' + ch.username : '');
   }
 
-  /** Kanal kartasini to'ldiradi (matnlar faqat textContent orqali). */
+  /** Kanal kartalarini to'ldiradi (matnlar faqat textContent orqali). Har bir karta — alohida kanal. */
   function fillSubGate() {
-    const ch = state.subChannel;
-    $('subCard').hidden = !ch;
-    $('subOpen').disabled = !channelUrl(ch);
-    if (!ch) return;
-    $('subTitle').textContent = ch.title || (ch.username ? '@' + ch.username : '');
-    $('subUser').textContent = ch.username ? '@' + ch.username : '';
+    const list = $('subList');
+    const chans = state.subChannels || [];
+    list.replaceChildren();
+    chans.forEach((ch) => {
+      const url = channelUrl(ch);
+      const card = document.createElement('button');
+      card.type = 'button';
+      card.className = 'card';
+      card.style.cssText = 'display:flex;align-items:center;gap:12px;width:100%;margin:0;text-align:left;font:inherit;color:inherit;cursor:pointer' + (ch.member === true ? ';opacity:.65' : '');
+      card.disabled = !url;
+      const ico = document.createElement('span');
+      ico.className = 'thumb';
+      ico.setAttribute('aria-hidden', 'true');
+      ico.textContent = ch.member === true ? '✅' : '📢';
+      const box = document.createElement('span');
+      box.style.cssText = 'flex:1;min-width:0';
+      const title = document.createElement('b');
+      title.style.cssText = 'display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap';
+      title.textContent = ch.title || (ch.username ? '@' + ch.username : '—');
+      const user = document.createElement('small');
+      user.className = 'muted';
+      user.textContent = ch.username ? '@' + ch.username : '';
+      box.append(title, user);
+      const arrow = document.createElement('b');
+      arrow.setAttribute('aria-hidden', 'true');
+      arrow.style.fontSize = '20px';
+      arrow.textContent = '↗';
+      card.append(ico, box, arrow);
+      card.addEventListener('click', () => openChannel(ch));
+      list.appendChild(card);
+    });
   }
 
   /** Kanalni ochadi: openTelegramLink -> openLink -> window.open. */
-  function openChannel() {
-    const url = channelUrl(state.subChannel);
+  function openChannel(ch) {
+    const url = channelUrl(ch);
     if (!url) return;
     haptic('light');
     if (tg && typeof tg.openTelegramLink === 'function') {
@@ -401,6 +456,8 @@
         return;
       }
       if (ok(res)) {
+        const fresh = channelsOf(res.data);
+        if (fresh.length) { state.subChannels = fresh; fillSubGate(); } // qaysi kanallar qolganini ✅ bilan ko'rsatadi
         tx(msg, 'gate.sub.not_yet');
         toast(tt('gate.sub.not_yet'), true);
       } else {
@@ -418,8 +475,6 @@
   }
 
   function initSubGate() {
-    $('subCard').addEventListener('click', openChannel);
-    $('subOpen').addEventListener('click', openChannel);
     $('subCheck').addEventListener('click', () => { haptic('light'); checkSubscription().catch(() => {}); });
     // Ilova ochiq qolib, foydalanuvchi Telegram'da kanaldan qaytsa (visibilitychange kelmasa) — 'activated' hodisasi
     if (tg && atLeast('8.0') && typeof tg.onEvent === 'function') tgTry(() => tg.onEvent('activated', () => { checkSubscription().catch(() => {}); }));
@@ -482,9 +537,9 @@
     const changed = state.view !== view;
     state.view = view;
     if (view !== 'admin') state.backFn = null;
-    if (view === 'send') state.backFn = () => go('profile'); // Tanga yuborish — Profilning ichki sahifasi
+    if (view === 'send' || view === 'buy') state.backFn = () => go('profile'); // Tanga yuborish / sotib olish — Profilning ichki sahifalari
     document.querySelectorAll('.view').forEach((v) => { v.hidden = v.dataset.view !== view; });
-    const tabView = view === 'send' ? 'profile' : view; // yuborish sahifasi "Profil" bo'limining ichki sahifasi
+    const tabView = view === 'send' || view === 'buy' ? 'profile' : view; // ichki sahifalar "Profil" bo'limining ichki sahifasi
     document.querySelectorAll('.tab').forEach((t) => {
       const on = t.dataset.go === tabView;
       t.classList.toggle('active', on);
@@ -496,7 +551,8 @@
     if (changed) { haptic('light'); enterView(view); }
     if (view === 'tasks') updateWatchState();
     if (view === 'send') enterSend();
-    if (view === 'profile') { loadOrders(false, false).catch(() => {}); loadReferrals().catch(() => {}); loadCoinHistory(false).catch(() => {}); }
+    if (view === 'buy') enterBuy();
+    if (view === 'profile') { loadOrders(false, false).catch(() => {}); loadReferrals().catch(() => {}); loadCoinHistory(false).catch(() => {}); loadWalletConfig(false).catch(() => {}); }
     if (view === 'shop') loadShop().catch(() => {});
     if (state.loaded && view !== 'admin') refresh().catch(() => {});
     if (view === 'admin' && window.AdRushAdmin) window.AdRushAdmin.onShow();
@@ -1226,6 +1282,242 @@
     $('convBtn').addEventListener('click', convertDiamonds);
   }
 
+  // ---------- Hamyon (Profil): so'm balans, to'ldirish va Rush Coin sotib olish ----------
+  // Klient faqat so'm miqdori (to'ldirish) yoki tanga miqdori + requestId (sotib olish) yuboradi. Kurs va paketlar serverdan
+  // (/api/wallet/config); klientdagi narx faqat ko'rsatish uchun. So'm balans FAQAT serverga Telegram to'lovi yetgach ko'payadi.
+  const wallet = { cfg: null, loadedAt: 0, loading: false, busy: false, buyBusy: false, reqId: null, reqCoins: 0 };
+
+  const uzsText = (n) => tt('wallet.uzs', { n: nf.format(n) });
+  const digits = (id) => { const v = $(id).value.trim(); return /^\d{1,10}$/.test(v) ? Number(v) : 0; };
+
+  function walletSay(id, key, kind, vars) {
+    const m = $(id);
+    if (key) tx(m, key, vars); else plain(m, '');
+    m.className = 'msg center' + (kind ? ' ' + kind : '');
+  }
+
+  async function loadWalletConfig(force) {
+    if (wallet.loading || (!force && wallet.cfg && Date.now() - wallet.loadedAt < 60000)) return;
+    wallet.loading = true;
+    try {
+      const res = await api('GET', '/api/wallet/config');
+      if (!ok(res)) return;
+      const d = res.data;
+      const valid = [d.coinPriceUzs, d.topupMinUzs, d.coinBuyMin].every((x) => Number.isInteger(x) && x > 0) && Array.isArray(d.packages);
+      wallet.cfg = valid ? {
+        enabled: Boolean(d.enabled), price: d.coinPriceUzs, topupMin: d.topupMinUzs, coinMin: d.coinBuyMin,
+        packages: d.packages.filter((x) => Number.isInteger(x) && x > 0),
+      } : null;
+      wallet.loadedAt = Date.now();
+      renderWallet();
+    } finally {
+      wallet.loading = false;
+    }
+  }
+
+  function renderPacks() {
+    const box = $('coinPacks');
+    const cur = digits('coinAmount');
+    box.replaceChildren();
+    if (!wallet.cfg) return;
+    for (const c of wallet.cfg.packages) {
+      const b = el('button', 'btn sm' + (c === cur ? '' : ' sec'), '🪙 ' + nf.format(c));
+      b.type = 'button';
+      b.disabled = wallet.busy || wallet.buyBusy;
+      b.addEventListener('click', () => {
+        $('coinAmount').value = String(c);
+        $('buyTopup').hidden = true;
+        walletSay('buyMsg', '');
+        haptic('select');
+        renderPacks();
+        updateWalletState();
+      });
+      box.appendChild(b);
+    }
+  }
+
+  function updateWalletState() {
+    const cfg = wallet.cfg;
+    if (!cfg || !$('buyBtn')) return;
+    const busy = wallet.busy || wallet.buyBusy;
+    $('walletPlus').disabled = busy;
+    $('topupGo').disabled = busy || digits('topupAmount') < cfg.topupMin;
+    $('topupGo').classList.toggle('busy', wallet.busy);
+    const n = digits('coinAmount');
+    $('buyBtn').disabled = busy || n < cfg.coinMin;
+    $('buyBtn').classList.toggle('busy', wallet.buyBusy);
+    if (n >= cfg.coinMin) tx($('buyPreview'), 'wallet.buy_cost', { n: nf.format(n), p: uzsText(n * cfg.price) });
+    else if (n > 0) tx($('buyPreview'), 'wallet.buy_min', { n: nf.format(cfg.coinMin) });
+    else plain($('buyPreview'), '');
+    $('coinPacks').querySelectorAll('button').forEach((b) => { b.disabled = busy; });
+  }
+
+  /** Karta faqat wallet yoqilgan bo'lsa ko'rinadi; til o'zgarganda ham shu yerdan qayta chiziladi. */
+  function renderWallet() {
+    const cfg = wallet.cfg;
+    const card = $('walletCard');
+    if (!card) return;
+    card.hidden = !(cfg && cfg.enabled);
+    if (card.hidden) { if (state.view === 'buy') go('profile'); return; }
+    plain($('walletRate'), tt('wallet.rate', { p: uzsText(cfg.price) }));
+    tx($('topupLabel'), 'wallet.topup_label', { n: nf.format(cfg.topupMin) });
+    tx($('coinLabel'), 'wallet.coin_label', { n: nf.format(cfg.coinMin) });
+    renderPacks();
+    updateWalletState();
+  }
+
+  /** Sotib olish sahifasiga kirganda: xabarlar tozalanadi, balanslar ko'rsatiladi, config yangilanadi. */
+  function enterBuy() {
+    if (wallet.buyBusy) return;
+    walletSay('buyMsg', '');
+    $('buyTopup').hidden = true;
+    setBalances({ rushCoins: state.coins, balanceUzs: state.uzs }, false);
+    loadWalletConfig(false).catch(() => {});
+    updateWalletState();
+  }
+
+  function openTopup(show) {
+    $('topupPanel').hidden = !show;
+    if (show) {
+      $('topupAmount').value = '';
+      walletSay('topupMsg', '');
+      updateWalletState();
+      tgTry(() => $('topupAmount').focus());
+    }
+  }
+
+  function openInvoice(url) {
+    return new Promise((resolve) => {
+      try { tg.openInvoice(url, (s) => resolve(String(s))); } catch (_e) { resolve('failed'); }
+    });
+  }
+
+  /** To'lov PAID bo'lguncha ~15 soniya (1.5s oralig'ida) so'raydi. Holat faqat serverdan. */
+  async function waitPayment(id) {
+    const until = Date.now() + 15000;
+    for (;;) {
+      const r = await api('GET', '/api/wallet/payments/' + encodeURIComponent(id), null, { retry: false });
+      const st = ok(r) ? r.data.status : null;
+      if (st === 'PAID' || st === 'FAILED' || st === 'CANCELLED') return { status: st, amountUzs: r.data.amountUzs };
+      if (Date.now() >= until) return { status: 'PENDING', amountUzs: 0 };
+      await sleep(1500);
+    }
+  }
+
+  async function startTopup() {
+    if (wallet.busy || wallet.buyBusy || state.gated || !wallet.cfg) return;
+    const amount = digits('topupAmount');
+    walletSay('topupMsg', '');
+    if (amount < wallet.cfg.topupMin) { walletSay('topupMsg', 'wallet.topup_min', 'bad', { n: nf.format(wallet.cfg.topupMin) }); haptic('error'); return; }
+    if (!(tg && typeof tg.openInvoice === 'function' && atLeast('6.1'))) { walletSay('topupMsg', 'wallet.no_invoice', 'bad'); haptic('error'); return; }
+    wallet.busy = true;
+    updateWalletState();
+    try {
+      const r = await api('POST', '/api/wallet/topup', { amountUzs: amount }, { retry: false });
+      if (!ok(r) || typeof r.data.invoiceUrl !== 'string' || !r.data.paymentId) {
+        walletSay('topupMsg', r.status === 0 ? 'err.network' : reasonKey(r.data && r.data.reason, 'wallet.topup_failed'), 'bad');
+        haptic('error');
+        return;
+      }
+      const status = await openInvoice(r.data.invoiceUrl);
+      if (status === 'cancelled') { walletSay('topupMsg', 'wallet.topup_cancelled', ''); return; }
+      if (status !== 'paid' && status !== 'pending') { walletSay('topupMsg', 'wallet.topup_failed', 'bad'); haptic('error'); return; }
+      walletSay('topupMsg', 'wallet.topup_wait', '');
+      const p = await waitPayment(r.data.paymentId);
+      await refresh().catch(() => {}); // balans serverdan
+      coinHist.loadedAt = 0;
+      if (p.status === 'PAID') {
+        openTopup(false);
+        toast(tt('wallet.topup_done', { n: uzsText(p.amountUzs || amount) }), false);
+        haptic('success');
+        loadCoinHistory(false).catch(() => {});
+      } else if (p.status === 'PENDING') {
+        walletSay('topupMsg', 'wallet.topup_pending', '');
+      } else {
+        walletSay('topupMsg', p.status === 'CANCELLED' ? 'wallet.topup_cancelled' : 'wallet.topup_failed', p.status === 'FAILED' ? 'bad' : '');
+      }
+    } catch (_e) {
+      walletSay('topupMsg', 'err.unexpected', 'bad');
+    } finally {
+      wallet.busy = false;
+      updateWalletState();
+    }
+  }
+
+  async function buyCoins() {
+    if (wallet.buyBusy || wallet.busy || state.gated || !wallet.cfg) return;
+    const n = digits('coinAmount');
+    walletSay('buyMsg', '');
+    $('buyTopup').hidden = true;
+    if (n < wallet.cfg.coinMin) { walletSay('buyMsg', 'wallet.buy_min', 'bad', { n: nf.format(wallet.cfg.coinMin) }); haptic('error'); return; }
+    if (!(await confirmBox(tt('wallet.buy_confirm', { n: nf.format(n), p: uzsText(n * wallet.cfg.price) })))) return; // narx faqat ko'rsatish uchun
+    wallet.buyBusy = true;
+    updateWalletState();
+    if (!wallet.reqId || wallet.reqCoins !== n) { wallet.reqId = uuid(); wallet.reqCoins = n; } // tarmoq xatosidan keyin shu id bilan qayta uriniladi
+    try {
+      const r = await api('POST', '/api/wallet/buy-coins', { coins: n, requestId: wallet.reqId }, { retry: false });
+      if (ok(r)) {
+        wallet.reqId = null;
+        setBalances(r.data, true);
+        coinHist.loadedAt = 0;
+        $('coinAmount').value = '';
+        renderPacks();
+        const got = r.data.bought && Number.isInteger(r.data.bought.coins) ? r.data.bought.coins : n;
+        toast(tt('wallet.buy_done', { n: nf.format(got) }), false);
+        haptic('success');
+        loadCoinHistory(false).catch(() => {});
+      } else if (r.status === 0) {
+        walletSay('buyMsg', 'err.network', 'bad'); // reqId saqlanadi
+        haptic('error');
+      } else {
+        const d = r.data || {};
+        if (r.status < 500) wallet.reqId = null; // server aniq javob berdi — keyingi urinish yangi so'rov
+        setBalances(d, false);
+        if (d.reason === 'INSUFFICIENT_FUNDS') { walletSay('buyMsg', 'reason.INSUFFICIENT_FUNDS', 'bad'); $('buyTopup').hidden = false; }
+        else if (d.reason === 'DUPLICATE_REQUEST') { coinHist.loadedAt = 0; walletSay('buyMsg', 'wallet.buy_duplicate', 'bad'); }
+        else walletSay('buyMsg', reasonKey(d.reason, 'wallet.buy_failed'), 'bad');
+        haptic('error');
+        refresh().catch(() => {});
+      }
+    } catch (_e) {
+      walletSay('buyMsg', 'err.unexpected', 'bad');
+    } finally {
+      wallet.buyBusy = false;
+      updateWalletState();
+    }
+  }
+
+  function initWallet() {
+    $('walletPlus').addEventListener('click', (e) => { e.stopPropagation(); haptic('light'); openTopup($('topupPanel').hidden); });
+    const stat = $('walletStat'); // so'm kartasini bosish — tanga sotib olish sahifasi
+    stat.addEventListener('click', () => go('buy'));
+    stat.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go('buy'); } });
+    $('topupCancel').addEventListener('click', () => openTopup(false));
+    $('topupGo').addEventListener('click', startTopup);
+    $('topupAmount').addEventListener('input', () => {
+      const input = $('topupAmount');
+      const clean = input.value.replace(/\D+/g, '').replace(/^0+(?=\d)/, '');
+      if (clean !== input.value) input.value = clean;
+      walletSay('topupMsg', '');
+      updateWalletState();
+    });
+    $('coinAmount').addEventListener('input', () => {
+      const input = $('coinAmount');
+      const clean = input.value.replace(/\D+/g, '').replace(/^0+(?=\d)/, '');
+      if (clean !== input.value) input.value = clean;
+      walletSay('buyMsg', '');
+      $('buyTopup').hidden = true;
+      renderPacks();
+      updateWalletState();
+    });
+    $('buyBtn').addEventListener('click', buyCoins);
+    $('buyTopup').addEventListener('click', () => {
+      haptic('light');
+      openTopup(true); // so'm to'ldirish — shu sahifada
+      $('topupPanel').scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'start' });
+    });
+  }
+
   // ---------- Tanga yuborish (Profil -> 💸) ----------
   // Klient faqat miqdor, qabul qiluvchi ID va requestId yuboradi; balans va limitlar serverda tekshiriladi.
   // Yangi balans FAQAT serverdan (r.data.rushCoins) olinadi — klient hech narsani hisoblamaydi.
@@ -1243,6 +1535,8 @@
     if (id) tx(b, 'send.my_id', { id });
   }
 
+  // Yuborish chegarasi (server bilan bir xil: min 100, max 1 000 000). Haqiqiy tekshiruv serverda; server boshqa chegara qaytarsa shu yerda yangilanadi.
+  const sendLimits = { min: 100, max: 1000000 };
   function sendAmount() {
     const v = $('sendAmount').value.trim();
     return /^\d{1,9}$/.test(v) ? Number(v) : 0;
@@ -1284,6 +1578,7 @@
     const to = sendToId();
     sendSay('');
     if (!amount) { sendSay('send.bad_amount', 'bad'); haptic('error'); return; }
+    if (amount < sendLimits.min || amount > sendLimits.max) { sendSay('send.range', 'bad', { min: nf.format(sendLimits.min), max: nf.format(sendLimits.max) }); haptic('error'); return; }
     if (!to) { sendSay('send.bad_id', 'bad'); haptic('error'); return; }
     if (to === ownId()) { sendSay('reason.SELF_TRANSFER', 'bad'); haptic('error'); return; } // faqat tezkor xabar; haqiqiy tekshiruv serverda
     if (amount > state.coins) { sendSay('reason.INSUFFICIENT_FUNDS', 'bad'); haptic('error'); return; }
@@ -1314,6 +1609,7 @@
         if (r.status < 500) send.reqId = null; // server aniq rad etdi — keyingi urinish yangi so'rov
         if (Number.isInteger(d.rushCoins)) { state.coins = d.rushCoins; setCoinBal(d.rushCoins, false); }
         if (d.reason === 'INVALID_AMOUNT' && Number.isInteger(d.min) && Number.isInteger(d.max)) {
+          sendLimits.min = d.min; sendLimits.max = d.max;
           sendSay('send.range', 'bad', { min: nf.format(d.min), max: nf.format(d.max) });
         } else if (d.reason === 'DUPLICATE_REQUEST') {
           coinHist.loadedAt = 0;
@@ -1339,6 +1635,8 @@
         const clean = input.value.replace(/\D+/g, '').replace(/^0+(?=\d)/, '');
         if (clean !== input.value) input.value = clean;
         sendSay('');
+        const a = sendAmount();
+        if (id === 'sendAmount' && a > 0 && (a < sendLimits.min || a > sendLimits.max)) sendSay('send.range', 'bad', { min: nf.format(sendLimits.min), max: nf.format(sendLimits.max) });
         updateSendState();
       });
     }
@@ -1403,11 +1701,12 @@
   const HIDDEN_TX = new Set(['COMPETITION_BET', 'LOSS_REFUND', 'COMPETITION_WIN']);
 
   function txRow(t) {
+    const uzs = t.currency === 'UZS';
     const diamond = t.currency === 'DIAMOND';
     const row = el('div', 'row tx');
     const name = el('span', 'name');
     name.append(el('span', null, i18n.has('tx.' + t.type) ? tt('tx.' + t.type) : t.type), el('small', 'tx-date', new Date(t.createdAt).toLocaleString(i18n.locale, DATE_FMT)));
-    row.append(name, el('span', 'val ' + (t.amount > 0 ? 'pos' : 'neg'), (t.amount > 0 ? '+' : '') + nf.format(t.amount) + (diamond ? ' 💎' : ' 🪙')));
+    row.append(name, el('span', 'val ' + (t.amount > 0 ? 'pos' : 'neg'), (t.amount > 0 ? '+' : '') + (uzs ? uzsText(t.amount) : nf.format(t.amount) + (diamond ? ' 💎' : ' 🪙'))));
     return row;
   }
 
@@ -1462,6 +1761,7 @@
     initReferral();
     initOrdersCard();
     initSend();
+    initWallet();
     initSubGate();
     $('coinHistMore').addEventListener('click', () => loadCoinHistory(true).catch(() => {}));
     $('homeRetry').addEventListener('click', retryAll);
@@ -1490,7 +1790,7 @@
     });
     // Majburiy obuna: status /me bilan birga so'raladi; tarmoq xatosida ilova oddiy ochiladi (server baribir to'sadi)
     const [meR, subR] = await Promise.all([meRes, api('GET', '/api/subscription/status')]);
-    if (!state.gated && ok(subR) && subR.data.required && !subR.data.subscribed) gate('subscribe', subR.data.channel);
+    if (!state.gated && ok(subR) && subR.data.required && !subR.data.subscribed) gate('subscribe', channelsOf(subR.data));
     if (state.gated && state.gateKind === 'subscribe') return; // ilovaning qolgan yuklanishi boshlanmaydi
     await Promise.all([refresh(), loadShopPreview()]);
     state.loaded = true;
@@ -1624,13 +1924,14 @@
   // data-i18n / tx() matnlarini AdRushI18n.apply() o'zi yangilaydi. Bu yerda: locale'ga bog'liq (sana, raqam) va
   // JS yig'adigan bo'limlar qayta chiziladi — sahifa yangilanmaydi.
   function onLangChange() {
-    document.querySelectorAll('[data-v]').forEach((n) => { n.textContent = nf.format(Number(n.dataset.v)); });
+    document.querySelectorAll('[data-v]').forEach((n) => { n.textContent = numText(n, Number(n.dataset.v)); });
     document.querySelectorAll('.csheet').forEach((n) => { (n.closest('.sheet-bg') || n).remove(); }); // ochiq oyna eski tilda qolmasin
     renderRates();
     renderShopPreview();
     renderShopList();
     renderOrders();
     renderProfile();
+    renderWallet();
     if (coinHist.loadedAt) {
       const box = $('coinHist');
       box.replaceChildren();

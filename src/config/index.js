@@ -106,7 +106,29 @@ if (!/^https:\/\/[^\s]+$/i.test(mineAppUrl)) {
 
 const path = require('path');
 
-if (int('TRANSFER_MIN', 1, { min: 1 }) > int('TRANSFER_MAX', 1_000_000, { min: 1 })) {
+// So'm hamyon (Telegram Bot Payments). Provider token yo'q bo'lsa wallet o'chiq. Hamma qiymat serverda — klientdan narx/kurs qabul qilinmaydi.
+const INT_MAX = 2_147_483_647; // Postgres INTEGER chegarasi (so'm balans va Payment.amountUzs Int)
+const walletProviderToken = (process.env.PAYMENT_PROVIDER_TOKEN || '').trim();
+const coinPriceUzs = int('COIN_PRICE_UZS', 10, { min: 1 });
+const topupMinUzs = int('TOPUP_MIN_UZS', 5000, { min: 1 });
+const topupMaxUzs = int('TOPUP_MAX_UZS', 100_000_000, { min: 1 }); // texnik yuqori chegara (Int/Telegram limitidan oshmaslik uchun), biznes limit emas
+const coinBuyMin = int('COIN_BUY_MIN', 500, { min: 1 });
+if (topupMaxUzs > INT_MAX / 100) {
+  throw new Error(`TOPUP_MAX_UZS juda katta: ${Math.floor(INT_MAX / 100)} dan oshmasligi kerak (Telegram summasi so'm*100 tiyinda)`);
+}
+if (topupMinUzs > topupMaxUzs) {
+  throw new Error('TOPUP_MIN_UZS TOPUP_MAX_UZS dan katta bo\'lishi mumkin emas');
+}
+const coinPackages = (() => {
+  const raw = (process.env.COIN_PACKAGES || '500,1000,2500,5000,10000').trim();
+  const list = raw.split(',').map((s) => s.trim()).filter(Boolean).map(Number);
+  if (!list.length || list.some((n) => !Number.isInteger(n) || n < coinBuyMin || n * coinPriceUzs > INT_MAX)) {
+    throw new Error(`COIN_PACKAGES noto'g'ri: vergul bilan butun sonlar, har biri >= COIN_BUY_MIN (${coinBuyMin}) bo'lishi kerak (hozir: "${raw}")`);
+  }
+  return Object.freeze([...new Set(list)].sort((a, b) => a - b));
+})();
+
+if (int('TRANSFER_MIN', 100, { min: 1 }) > int('TRANSFER_MAX', 1_000_000, { min: 1 })) {
   throw new Error('TRANSFER_MIN TRANSFER_MAX dan katta bo\'lishi mumkin emas');
 }
 
@@ -188,10 +210,21 @@ const config = Object.freeze({
     referralDailyCap: int('RUSH_REFERRAL_DAILY_CAP', 100), // bitta user kuniga (UTC) ko'pi bilan nechta referral oladi. 0 = cheklovsiz
     subscribeReward: int('RUSH_SUBSCRIBE_REWARD', 50, { min: 1 }), // majburiy kanalga birinchi marta obuna bo'lganda beriladigan Rush Coin
     // Foydalanuvchilar orasida Rush Coin o'tkazmasi (komissiya yo'q)
-    transferMin: int('TRANSFER_MIN', 1, { min: 1 }),
+    transferMin: int('TRANSFER_MIN', 100, { min: 1 }), // eng kam o'tkazma
     transferMax: int('TRANSFER_MAX', 1_000_000, { min: 1 }),
-    transferDailyLimit: int('TRANSFER_DAILY_LIMIT', 10_000), // bitta user kuniga (UTC) ko'pi bilan shuncha Rush yuboradi. 0 = cheksiz
+    transferDailyLimit: int('TRANSFER_DAILY_LIMIT', 0), // bitta user kuniga (UTC) ko'pi bilan shuncha Rush yuboradi. 0 = cheksiz (avval 10 000 edi — 1 000 000 gacha yuborishga to'sqinlik qilardi)
     botUsername: (process.env.BOT_USERNAME || '').trim().replace(/^@/, ''), // bo'sh bo'lsa getMe orqali aniqlanadi
+  }),
+
+  // So'm hamyon va Rush Coin sotib olish. Faqat Profil bo'limida ishlatiladi.
+  wallet: Object.freeze({
+    providerToken: walletProviderToken, // Telegram Payments provayder tokeni (@BotFather -> Payments). Bo'sh bo'lsa wallet o'chiq
+    enabled: walletProviderToken !== '',
+    coinPriceUzs, // 1 Rush Coin = N so'm
+    topupMinUzs, // so'm balansni to'ldirishning eng kam miqdori (so'm)
+    topupMaxUzs, // texnik yuqori chegara (so'm), biznes limit emas
+    coinBuyMin, // bir martada sotib olinadigan eng kam Rush Coin
+    coinPackages, // tayyor paketlar (Rush Coin miqdori)
   }),
 
   ads: Object.freeze({

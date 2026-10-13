@@ -23,10 +23,12 @@ router.get('/users', ctrl.searchUsers);
 router.post('/users/:telegramId/block', userLimiter(30, 'admin-block'), ctrl.blockUser);
 router.post('/users/:telegramId/unblock', userLimiter(30, 'admin-block'), ctrl.unblockUser);
 
-// Majburiy kanalga obuna (yozuv amallariga qattiqroq limit — Telegram'ga so'rov ketadi)
+// Majburiy kanallarga obuna — 50 tagacha (yozuv amallariga qattiqroq limit — Telegram'ga so'rov ketadi)
 router.get('/subscription', ctrl.getSubscription);
-router.put('/subscription', userLimiter(30, 'admin-subscription'), ctrl.setSubscription);
-router.delete('/subscription', userLimiter(30, 'admin-subscription'), ctrl.removeSubscription);
+router.post('/subscription', userLimiter(30, 'admin-subscription'), ctrl.setSubscription);
+router.put('/subscription', userLimiter(30, 'admin-subscription'), ctrl.setSubscription); // eski nom: endi ham QO'SHADI
+router.delete('/subscription/:id', userLimiter(30, 'admin-subscription'), ctrl.removeSubscriptionById);
+router.delete('/subscription', userLimiter(30, 'admin-subscription'), ctrl.removeSubscription); // hammasini o'chiradi
 
 // Reklama provayderlari sozlamalari (AdsGram block ID lar, Monetag zone, OnClickA spot). Maxfiy tokenlar bu yerda ko'rinmaydi.
 router.get('/ads/settings', ctrl.getAdSettings);

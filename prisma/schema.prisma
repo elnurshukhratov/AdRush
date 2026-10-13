@@ -16,17 +16,20 @@ enum AdSessionStatus {
   REJECTED  // shubhali (masalan juda tez claim) — hisoblanmaydi
 }
 
-// Ledger valyutasi: RUSH = Rush Coin (User.rushCoins), DIAMOND = Olmos (User.diamonds)
+// Ledger valyutasi: RUSH = Rush Coin (User.rushCoins), DIAMOND = Olmos (User.diamonds), UZS = so'm (User.balanceUzs, butun so'm)
 enum CoinCurrency {
   RUSH
   DIAMOND
+  UZS
 }
 
 // Ledger harakati turi.
 //  ADS_REWARD (+olmos), REFERRAL_REWARD (+olmos), SUBSCRIBE_REWARD (+Rush),
 //  TRANSFER_OUT (-Rush) / TRANSFER_IN (+Rush) — foydalanuvchilar orasida o'tkazma (ikkala yozuv refType='TRANSFER' va bir xil refId bilan bog'langan),
 //  CONVERT_OUT (-olmos) / CONVERT_IN (+Rush) — olmosni Rush Coin ga almashtirish (refType='CONVERT', bir xil refId),
-//  SHOP_PURCHASE (-Rush) / SHOP_REFUND (+Rush) — do'kon.
+//  SHOP_PURCHASE (-Rush) / SHOP_REFUND (+Rush) — do'kon,
+//  WALLET_TOPUP (+so'm) — Telegram to'lovi orqali so'm balansni to'ldirish,
+//  COIN_BUY_OUT (-so'm) / COIN_BUY_IN (+Rush) — so'm hisobidan Rush Coin sotib olish (refType='COIN_BUY', bir xil refId).
 // COMPETITION_BET, LOSS_REFUND, COMPETITION_WIN — eski yozuvlar uchun saqlangan (bazada qoladi, ilova ko'rsatmaydi).
 enum CoinTxType {
   ADS_REWARD
@@ -41,6 +44,17 @@ enum CoinTxType {
   CONVERT_IN
   SHOP_PURCHASE
   SHOP_REFUND
+  WALLET_TOPUP
+  COIN_BUY_OUT
+  COIN_BUY_IN
+}
+
+// Telegram to'lovi holati: PENDING (invoice yaratildi) -> PAID (successful_payment keldi) | FAILED | CANCELLED
+enum PaymentStatus {
+  PENDING
+  PAID
+  FAILED
+  CANCELLED
 }
 
 // Do'kon mahsuloti turi: faqat belgi/kategoriya, mantiqni o'zgartirmaydi
@@ -76,6 +90,8 @@ model User {
   rushCoins  Int       @default(0)
   // Olmos balansi — faqat server o'zgartiradi (ledger bilan birga). Olmos reklama va referaldan olinadi, Rush Coin ga almashtiriladi.
   diamonds   Int       @default(0)
+  // So'm balansi (butun so'm) — faqat server o'zgartiradi (ledger bilan birga). Faqat Telegram to'lovi bilan to'ladi, faqat Rush Coin sotib olishga sarflanadi.
+  balanceUzs Int       @default(0)
   // Kim taklif qilgani (referral). Faqat bir marta, yangi user /start qilganda yoziladi.
   referredByUserId Int?
   createdAt  DateTime  @default(now())
@@ -85,6 +101,7 @@ model User {
   sessions AdSession[]
   coinTxs  CoinTransaction[]
   shopOrders ShopOrder[]
+  payments   Payment[]
 
   referredBy User?  @relation("Referral", fields: [referredByUserId], references: [id], onDelete: SetNull)
   referrals  User[] @relation("Referral")
@@ -179,6 +196,24 @@ model CoinTransaction {
 
   @@index([userId, createdAt(sort: Desc)])
   @@index([userId, type])
+}
+
+// Telegram Bot Payments to'lovi (so'm balansni to'ldirish). id = invoice payload.
+// telegramChargeId UNIQUE: bir to'lov hodisasi ikki marta hisoblanmaydi. amountUzs — butun so'm (Telegram'ga so'm*100 tiyinda yuboriladi).
+model Payment {
+  id               String        @id @default(uuid()) @db.Uuid
+  userId           Int
+  amountUzs        Int
+  status           PaymentStatus @default(PENDING)
+  telegramChargeId String?       @unique
+  providerChargeId String?
+  createdAt        DateTime      @default(now())
+  paidAt           DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([status])
 }
 
 // Do'kon mahsuloti: hammasini admin qo'shadi (seed hech narsa qo'shmaydi). stock = null -> cheksiz.

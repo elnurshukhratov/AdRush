@@ -8,10 +8,13 @@ const { userSync } = require('./bot/middlewares/userSync');
 const { blockedGuard } = require('./bot/middlewares/blockedGuard');
 const { createErrorHandler } = require('./bot/middlewares/errorHandler');
 const registerStart = require('./bot/commands/start');
+const registerPayments = require('./bot/payments');
 
 // Bot faqat shu update turlarini ishlatadi — Telegram boshqalarini yubormaydi (trafik va hujum yuzasi kamayadi).
 // callback_query — til tanlash tugmalari uchun (busiz tugmalar ishlamaydi).
-const ALLOWED_UPDATES = ['message', 'callback_query'];
+// pre_checkout_query — Telegram to'lovi (so'm hamyon): busiz to'lov oynasi 10 soniyadan keyin xato beradi.
+// successful_payment alohida tur emas, u 'message' ichida keladi.
+const ALLOWED_UPDATES = ['message', 'callback_query', 'pre_checkout_query'];
 
 // Bot faqat /start. Boshqa hamma funksiya Mine App ichida.
 const BOT_COMMANDS = [{ command: 'start', description: 'AdRush ni ochish' }];
@@ -21,11 +24,12 @@ function createBot() {
 
   bot.catch(createErrorHandler());
 
-  // Tartib muhim: throttle -> user -> blok tekshiruvi -> /start
+  // Tartib muhim: throttle -> user -> blok tekshiruvi -> to'lovlar -> /start
   bot.use(throttle());
   bot.use(userSync());
   bot.use(blockedGuard());
 
+  registerPayments(bot);
   registerStart(bot);
 
   return bot;

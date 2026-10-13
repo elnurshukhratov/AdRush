@@ -49,9 +49,10 @@
   const fmt = (iso) => (iso ? new Date(iso).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) : '—');
   const badge = (status, label) => h('span', { class: 'badge ' + (BADGE_CLS[status] || status), text: label || STATUS_UZ[status] || status });
   /** Raqam 0 dan qiymatgacha sanab chiqadi (500 ms); reduced-motion da darhol qo'yiladi. */
-  function counter(tag, cls, value) {
+  function counter(tag, cls, value, compact) {
     const n = h(tag, { class: cls, text: '0' });
     n.dataset.v = '0';
+    if (compact) n.dataset.compact = '1'; // 1000 → 1k (to'liq qiymat: ustiga bosib turing)
     setNum(n, value, false);
     return n;
   }
@@ -186,7 +187,7 @@
     }
 
     const tile = (ico, label, value, tone) => h('div', { class: 'tile pop' + (tone ? ' ' + tone : '') },
-      h('div', { class: 'ico', text: ico }), counter('b', '', value), h('span', { text: label }));
+      h('div', { class: 'ico', text: ico }), counter('b', '', value, true), h('span', { text: label }));
     frag.appendChild(h('div', { class: 'tiles' },
       tile('👥', 'Jami foydalanuvchilar', d.totalUsers),
       tile('📺', 'Jami valid reklamalar', d.lifetimeValidAds, 'good'),
@@ -212,6 +213,8 @@
     CHANNEL_NOT_FOUND: 'Kanal topilmadi',
     INVITE_REQUIRED: 'Maxfiy kanal uchun taklif havolasini kiriting',
     BAD_CHANNEL: 'Manzil noto‘g‘ri',
+    CHANNEL_EXISTS: 'Bu kanal allaqachon qo‘shilgan',
+    CHANNEL_LIMIT: 'Kanallar soni chegarasiga yetildi (50 ta)',
   };
   /** Backend `reason` (yoki `code`) kodini tushunarli o'zbekcha matnga o'giradi. */
   function subErr(res, fallback) {
@@ -229,59 +232,75 @@
     const res = await call('GET', '/subscription');
     if (!guard()) return;
     if (!ok(res)) return failed(res, render);
-    const ch = res.data.channel;
-    const url = ch ? (ch.inviteUrl || (ch.username ? 'https://t.me/' + ch.username : '')) : '';
+    const list = Array.isArray(res.data.channels) ? res.data.channels : (res.data.channel ? [res.data.channel] : []);
+    const max = res.data.max || 50;
 
-    const cur = h('div', { class: 'card' }, h('div', { class: 'card-head' }, h('b', { text: '📢 Majburiy obuna' })));
-    if (ch) {
-      cur.appendChild(h('div', { class: 'prow' },
-        h('div', { class: 'thumb', text: '📢' }),
-        h('div', { class: 'pb' },
-          h('div', { class: 'pt', text: ch.title || (ch.username ? '@' + ch.username : 'Kanal') }),
-          h('div', { class: 'ps', text: ch.username ? '@' + ch.username : 'Maxfiy kanal' }),
-          url ? h('div', { class: 'ps', text: url }) : null),
-        url ? h('button', { class: 'btn sm sec', type: 'button', text: '↗', 'aria-label': 'Kanalni ochish', onclick: () => openLink(url) }) : null));
+    const cur = h('div', { class: 'card' }, h('div', { class: 'card-head' }, h('b', { text: '📢 Majburiy obuna (' + list.length + '/' + max + ')' })));
+    if (list.length) {
+      list.forEach((ch) => {
+        const url = ch.inviteUrl || (ch.username ? 'https://t.me/' + ch.username : '');
+        const del = h('button', { class: 'btn sm danger', type: 'button', text: '🗑', 'aria-label': 'Kanalni o‘chirish' });
+        del.addEventListener('click', async () => {
+          if (!(await confirmBox('«' + (ch.title || ch.username || 'Kanal') + '» majburiy obunadan o‘chirilsinmi?'))) return;
+          del.disabled = true;
+          const r = await call('DELETE', '/subscription/' + encodeURIComponent(ch.id));
+          if (!ok(r)) { del.disabled = false; return toast(subErr(r, msgOf(r, 'O‘chirib bo‘lmadi')), true); }
+          toast('O‘chirildi');
+          render();
+        });
+        cur.appendChild(h('div', { class: 'prow' },
+          h('div', { class: 'thumb', text: '📢' }),
+          h('div', { class: 'pb' },
+            h('div', { class: 'pt', text: ch.title || (ch.username ? '@' + ch.username : 'Kanal') }),
+            h('div', { class: 'ps', text: ch.username ? '@' + ch.username : 'Maxfiy kanal' }),
+            url ? h('div', { class: 'ps', text: url }) : null),
+          url ? h('button', { class: 'btn sm sec', type: 'button', text: '↗', 'aria-label': 'Kanalni ochish', onclick: () => openLink(url) }) : null,
+          del));
+      });
     } else {
       cur.appendChild(h('p', { class: 'muted', text: 'Majburiy obuna o‘chiq' }));
     }
 
-    const channel = h('input', { type: 'text', maxlength: '200', placeholder: '@kanal yoki -100...', autocomplete: 'off', autocapitalize: 'off', spellcheck: 'false', value: ch && ch.username ? '@' + ch.username : '' });
-    const invite = h('input', { type: 'url', maxlength: '300', placeholder: 'https://t.me/+...', autocomplete: 'off', value: ch && !ch.username && ch.inviteUrl ? ch.inviteUrl : '' });
+    const channel = h('input', { type: 'text', maxlength: '200', placeholder: '@kanal yoki -100...', autocomplete: 'off', autocapitalize: 'off', spellcheck: 'false' });
+    const invite = h('input', { type: 'url', maxlength: '300', placeholder: 'https://t.me/+...', autocomplete: 'off' });
     const err = h('p', { class: 'errtxt', role: 'alert' });
-    const save = h('button', { class: 'btn block', type: 'button', text: 'Saqlash' });
+    const save = h('button', { class: 'btn block', type: 'button', text: 'Qo‘shish' });
     save.addEventListener('click', async () => {
       err.textContent = '';
       const body = { channel: channel.value.trim() };
       if (!body.channel) { err.textContent = 'Kanal manzilini kiriting.'; return; }
       if (invite.value.trim()) body.inviteUrl = invite.value.trim();
       save.disabled = true;
-      const r = await call('PUT', '/subscription', body);
+      const r = await call('POST', '/subscription', body);
       save.disabled = false;
       if (!ok(r)) { err.textContent = subErr(r, 'Saqlab bo‘lmadi. Qayta urinib ko‘ring.'); return; }
-      toast('Saqlandi');
+      toast('Kanal qo‘shildi');
       render();
     });
 
-    const form = h('div', { class: 'card' },
-      h('div', { class: 'card-head' }, h('b', { text: ch ? '✏️ Kanalni almashtirish' : '➕ Kanal ulash' })),
-      h('p', { class: 'muted', text: 'Avval botni kanalga admin qiling.' }),
-      field('Kanal (@username yoki -100... id)', channel),
-      field('Maxfiy kanal uchun taklif havolasi (ixtiyoriy)', invite),
-      err, save);
-
     const frag = document.createDocumentFragment();
-    frag.append(cur, form);
-    if (ch) {
-      const del = h('button', { class: 'btn danger block', type: 'button', text: '🗑 O‘chirish' });
-      del.addEventListener('click', async () => {
-        if (!(await confirmBox('Majburiy obuna o‘chirilsinmi? Foydalanuvchilar kanalga obuna bo‘lmasdan ham kira oladi.'))) return;
-        del.disabled = true;
+    frag.appendChild(cur);
+    if (list.length < max) {
+      frag.appendChild(h('div', { class: 'card' },
+        h('div', { class: 'card-head' }, h('b', { text: '➕ Kanal qo‘shish' })),
+        h('p', { class: 'muted', text: 'Avval botni kanalga admin qiling. Foydalanuvchi qo‘shilgan HAMMA kanalga obuna bo‘lishi kerak.' }),
+        field('Kanal (@username yoki -100... id)', channel),
+        field('Maxfiy kanal uchun taklif havolasi (ixtiyoriy)', invite),
+        err, save));
+    } else {
+      frag.appendChild(h('p', { class: 'muted', text: 'Kanallar soni chegarasiga yetildi (' + max + ' ta). Yangisini qo‘shish uchun avval birortasini o‘chiring.' }));
+    }
+    if (list.length > 1) {
+      const delAll = h('button', { class: 'btn danger block', type: 'button', text: '🗑 Hammasini o‘chirish' });
+      delAll.addEventListener('click', async () => {
+        if (!(await confirmBox('Barcha ' + list.length + ' ta kanal o‘chirilsinmi? Foydalanuvchilar obunasiz ham kira oladi.'))) return;
+        delAll.disabled = true;
         const r = await call('DELETE', '/subscription');
-        if (!ok(r)) { del.disabled = false; return toast(subErr(r, msgOf(r, 'O‘chirib bo‘lmadi')), true); }
+        if (!ok(r)) { delAll.disabled = false; return toast(subErr(r, msgOf(r, 'O‘chirib bo‘lmadi')), true); }
         toast('O‘chirildi');
         render();
       });
-      frag.appendChild(del);
+      frag.appendChild(delAll);
     }
     st.body.replaceChildren(frag);
   }

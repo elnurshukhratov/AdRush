@@ -17,11 +17,14 @@ const COIN_TX = Object.freeze({
   CONVERT_IN: 'CONVERT_IN',
   SHOP_PURCHASE: 'SHOP_PURCHASE',
   SHOP_REFUND: 'SHOP_REFUND',
+  WALLET_TOPUP: 'WALLET_TOPUP', // +so'm (Telegram to'lovi)
+  COIN_BUY_OUT: 'COIN_BUY_OUT', // -so'm (Rush Coin sotib olish)
+  COIN_BUY_IN: 'COIN_BUY_IN', // +Rush Coin (sotib olingan)
 });
 
-/** Ledger valyutalari (prisma enum CoinCurrency) va ularga mos User ustuni. */
-const CURRENCY = Object.freeze({ RUSH: 'RUSH', DIAMOND: 'DIAMOND' });
-const CURRENCY_FIELD = Object.freeze({ RUSH: 'rushCoins', DIAMOND: 'diamonds' });
+/** Ledger valyutalari (prisma enum CoinCurrency) va ularga mos User ustuni. UZS — butun so'm. */
+const CURRENCY = Object.freeze({ RUSH: 'RUSH', DIAMOND: 'DIAMOND', UZS: 'UZS' });
+const CURRENCY_FIELD = Object.freeze({ RUSH: 'rushCoins', DIAMOND: 'diamonds', UZS: 'balanceUzs' });
 
 const TX_OPTS = Object.freeze({ maxWait: 5000, timeout: 10000 });
 
@@ -43,7 +46,7 @@ function startOfUtcDay(d) {
 
 /**
  * Tranzaksiya (tx) ICHIDA user balansini o'zgartiradi va ledger (CoinTransaction) yozadi.
- *  - currency: 'RUSH' (default, User.rushCoins) yoki 'DIAMOND' (User.diamonds).
+ *  - currency: 'RUSH' (default, User.rushCoins), 'DIAMOND' (User.diamonds) yoki 'UZS' (User.balanceUzs).
  *  - amount > 0: kirim, amount < 0: chiqim. Chiqimda balans yetmasa { ok:false, reason:'INSUFFICIENT_FUNDS' } (hech narsa yozilmaydi).
  *  - Balans atomik UPDATE ... SET <balans> = <balans> + N orqali o'zgaradi (read-modify-write emas);
  *    chiqimda `<balans> >= N` sharti shu UPDATE ning o'zida, shuning uchun parallel so'rovlar balansni manfiy qila olmaydi.
@@ -74,14 +77,14 @@ async function getBalance(userId, client = prisma) {
   return row ? row.rushCoins : 0;
 }
 
-/** Ikkala balans: { rushCoins, diamonds }. */
+/** Barcha balanslar: { rushCoins, diamonds, balanceUzs }. */
 async function getBalances(userId, client = prisma) {
-  const row = await client.user.findUnique({ where: { id: userId }, select: { rushCoins: true, diamonds: true } });
-  return { rushCoins: row ? row.rushCoins : 0, diamonds: row ? row.diamonds : 0 };
+  const row = await client.user.findUnique({ where: { id: userId }, select: { rushCoins: true, diamonds: true, balanceUzs: true } });
+  return { rushCoins: row ? row.rushCoins : 0, diamonds: row ? row.diamonds : 0, balanceUzs: row ? row.balanceUzs : 0 };
 }
 
 /**
- * Foydalanuvchining tarixi (Rush Coin va olmos, yangisi birinchi). cursor = oxirgi ko'rilgan id.
+ * Foydalanuvchining tarixi (Rush Coin, olmos va so'm, yangisi birinchi). cursor = oxirgi ko'rilgan id.
  * Faqat ilova ishlatadigan turlar (COIN_TX) qaytadi; eski yozuvlar bazada qoladi, lekin ko'rsatilmaydi.
  */
 async function getHistory(userId, { limit = 20, cursor = null } = {}) {

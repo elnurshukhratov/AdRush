@@ -14,6 +14,9 @@ function throttle() {
   return async (ctx, next) => {
     const id = ctx.from && ctx.from.id;
     if (!id) return next();
+    // To'lov hodisalari HECH QACHON tashlab yuborilmaydi: pre_checkout javobsiz qolsa to'lov bekor bo'ladi,
+    // successful_payment tashlansa pul olinib balans qo'shilmay qoladi
+    if (ctx.preCheckoutQuery || (ctx.message && ctx.message.successful_payment)) return next();
 
     const now = Date.now();
     if (hits.size > 5000) {

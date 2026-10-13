@@ -1,7 +1,7 @@
 'use strict';
 
 const { z } = require('zod');
-const { asyncHandler } = require('../../utils/apiError');
+const { asyncHandler, ApiError } = require('../../utils/apiError');
 const adminService = require('../../services/admin/adminService');
 const { record } = require('../../services/audit/auditService');
 const subscription = require('../../services/subscription/subscriptionService');
@@ -66,37 +66,55 @@ const setUserBlocked = (blocked) =>
 const blockUser = setUserBlocked(true);
 const unblockUser = setUserBlocked(false);
 
-// ---------- Majburiy kanalga obuna ----------
-/** GET /api/admin/subscription — joriy faol kanal yoki null. */
+// ---------- Majburiy kanalga obuna (ko'pi bilan 50 ta kanal) ----------
+const channelIdParams = z.object({ id: z.coerce.number().int().positive() }).strict();
+
+/** GET /api/admin/subscription — barcha faol kanallar { channels, max }. `channel` — birinchisi (eski klientlar uchun). */
 const getSubscription = asyncHandler(async (_req, res) => {
   noStore(res);
-  res.json({ success: true, channel: await subscription.getActiveChannel() });
+  const channels = await subscription.getActiveChannels();
+  res.json({ success: true, channels, max: subscription.MAX_CHANNELS, channel: channels[0] || null });
 });
 
-/** PUT /api/admin/subscription { channel, inviteUrl? } — kanalni Telegram orqali tekshiradi va faol qiladi (xatolar ApiError). */
+/** POST/PUT /api/admin/subscription { channel, inviteUrl? } — kanalni Telegram orqali tekshiradi va RO'YXATGA QO'SHADI (xatolar ApiError). */
 const setSubscription = asyncHandler(async (req, res) => {
   const { channel: ref, inviteUrl } = subscriptionBody.parse(req.body);
-  const channel = await subscription.setChannel(ref, inviteUrl);
+  const channel = await subscription.addChannel(ref, inviteUrl);
   await record('ADMIN_SUBSCRIPTION_SET', {
     actorTelegramId: actor(req),
     entityType: 'channel',
     entityId: channel.id,
     details: { chatId: channel.chatId, username: channel.username, title: channel.title },
   });
-  res.json({ success: true, channel });
+  const channels = await subscription.getActiveChannels();
+  res.json({ success: true, channel, channels, max: subscription.MAX_CHANNELS });
 });
 
-/** DELETE /api/admin/subscription — majburiy obunani o'chiradi. */
+/** DELETE /api/admin/subscription/:id — bitta kanalni o'chiradi. */
+const removeSubscriptionById = asyncHandler(async (req, res) => {
+  const { id } = channelIdParams.parse(req.params);
+  const removed = await subscription.removeChannelById(id);
+  if (!removed) throw new ApiError(404, 'CHANNEL_NOT_FOUND', 'Kanal topilmadi');
+  await record('ADMIN_SUBSCRIPTION_REMOVED', {
+    actorTelegramId: actor(req),
+    entityType: 'channel',
+    entityId: removed.id,
+    details: { chatId: removed.chatId, username: removed.username, title: removed.title },
+  });
+  res.json({ success: true, channels: await subscription.getActiveChannels() });
+});
+
+/** DELETE /api/admin/subscription — BARCHA kanallarni o'chiradi (majburiy obuna o'chadi). */
 const removeSubscription = asyncHandler(async (req, res) => {
-  const previous = await subscription.getActiveChannel();
+  const previous = await subscription.getActiveChannels();
   await subscription.removeChannel();
   await record('ADMIN_SUBSCRIPTION_REMOVED', {
     actorTelegramId: actor(req),
     entityType: 'channel',
-    entityId: previous ? previous.id : null,
-    details: previous ? { chatId: previous.chatId, username: previous.username, title: previous.title } : { hadChannel: false },
+    entityId: null,
+    details: previous.length ? { removedAll: true, count: previous.length, chatIds: previous.map((c) => c.chatId) } : { hadChannel: false },
   });
-  res.json({ success: true });
+  res.json({ success: true, channels: [] });
 });
 
 // ---------- Reklama provayderlari sozlamalari ----------
@@ -117,6 +135,7 @@ module.exports = {
   setAdSettings,
   getSubscription,
   setSubscription,
+  removeSubscriptionById,
   removeSubscription,
   listAudit,
   searchUsers,
