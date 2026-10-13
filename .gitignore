@@ -8,3 +8,4 @@ logs/
 coverage/
 dist/
 /uploads/
+.env.example
