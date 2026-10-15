@@ -4,6 +4,7 @@ const { z } = require('zod');
 const { ApiError, asyncHandler } = require('../../utils/apiError');
 const { getBalance } = require('../../services/coins/coinService');
 const shopService = require('../../services/shop/shopService');
+const shopHistory = require('../../services/shop/shopHistoryService');
 
 const buySchema = z
   .object({
@@ -54,4 +55,11 @@ const orders = asyncHandler(async (req, res) => {
   res.json({ success: true, ...page });
 });
 
-module.exports = { products, buy, orders };
+/** GET /api/shop/history — ommaviy Tarix: eng so'nggi 10 ta topshirilgan va admin tasdiqlagan sovg'a (sahifalash yo'q). */
+const history = asyncHandler(async (_req, res) => {
+  const page = await shopHistory.listPublicHistory();
+  res.set('Cache-Control', 'private, no-store');
+  res.json({ success: true, ...page });
+});
+
+module.exports = { products, buy, orders, history };

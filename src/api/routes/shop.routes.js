@@ -12,5 +12,6 @@ router.use(telegramAuth, requireSubscription);
 router.get('/products', userLimiter(60, 'shop-products'), ctrl.products);
 router.post('/buy', userLimiter(10, 'shop-buy'), ctrl.buy);
 router.get('/orders', userLimiter(30, 'shop-orders'), ctrl.orders);
+router.get('/history', userLimiter(60, 'shop-history'), ctrl.history);
 
 module.exports = router;

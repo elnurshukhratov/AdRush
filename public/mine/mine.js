@@ -39,7 +39,7 @@
   const nf = { format: (n) => (nfCache[i18n.locale] || (nfCache[i18n.locale] = new Intl.NumberFormat(i18n.locale))).format(n) };
   const nfFixed = new Intl.NumberFormat('en-US');
   // Katta raqamlar qisqa ko'rinishda: 1000 → 1k, 1 500 000 → 1.5M (yaxlitlanmaydi, pastga qirqiladi — balans ortiq ko'rinmasin).
-  const COMPACT_IDS = new Set(['topDiamonds', 'homeDiamonds', 'tasksDiamonds', 'pDiamonds', 'topCoins', 'homeCoins', 'tasksCoins', 'pCoins', 'pUzs']);
+  const COMPACT_IDS = new Set(['topDiamonds', 'tasksDiamonds', 'pDiamonds', 'topCoins', 'tasksCoins', 'pCoins', 'pUzs']);
   const cfCache = {};
   function compactFmt(n) {
     const v = Number(n) || 0;
@@ -225,13 +225,13 @@
     if (!d) return;
     if (Number.isInteger(d.diamonds)) {
       state.diamonds = d.diamonds;
-      ['topDiamonds', 'homeDiamonds', 'tasksDiamonds', 'pDiamonds'].forEach((id) => { const n = $(id); if (n) setNum(n, d.diamonds, bump && id === 'tasksDiamonds'); });
+      ['topDiamonds', 'chessDiamonds', 'tasksDiamonds', 'pDiamonds'].forEach((id) => { const n = $(id); if (n) setNum(n, d.diamonds, bump && id === 'tasksDiamonds'); });
       const chip = $('topDiamondChip');
       if (bump && chip && !reduceMotion) { chip.classList.remove('bump'); void chip.offsetWidth; chip.classList.add('bump'); }
     }
     if (Number.isInteger(d.rushCoins)) {
       state.coins = d.rushCoins;
-      ['topCoins', 'homeCoins', 'tasksCoins', 'pCoins', 'sendBal', 'buyCoinsBal'].forEach((id) => { const n = $(id); if (n) setNum(n, d.rushCoins, false); });
+      ['topCoins', 'tasksCoins', 'pCoins', 'sendBal', 'buyCoinsBal'].forEach((id) => { const n = $(id); if (n) setNum(n, d.rushCoins, false); });
       const chip = $('topCoinChip');
       if (bump && chip && !reduceMotion) { chip.classList.remove('bump'); void chip.offsetWidth; chip.classList.add('bump'); }
     }
@@ -554,6 +554,7 @@
     if (view === 'buy') enterBuy();
     if (view === 'profile') { loadOrders(false, false).catch(() => {}); loadReferrals().catch(() => {}); loadCoinHistory(false).catch(() => {}); loadWalletConfig(false).catch(() => {}); }
     if (view === 'shop') loadShop().catch(() => {});
+    if (view === 'home' && window.AdRushChess) window.AdRushChess.onShow(); // Home — shahmat ekrani (chess.js)
     if (state.loaded && view !== 'admin') refresh().catch(() => {});
     if (view === 'admin' && window.AdRushAdmin) window.AdRushAdmin.onShow();
   }
@@ -691,11 +692,6 @@
   }
 
   // ---------- Ma'lumot yuklash ----------
-  function showHomeError(res) {
-    const reason = res && res.data && res.data.reason;
-    tx($('homeErrorText'), reason ? reasonKey(reason, 'err.generic') : 'err.check_network');
-    $('homeError').hidden = false;
-  }
 
 
 
@@ -705,12 +701,8 @@
   /** Balanslar va kurslar: faqat serverdan (/api/users/me/stats). Klient hech narsani hisoblamaydi. */
   async function refresh() {
     const res = await api('GET', '/api/users/me/stats');
-    if (!ok(res)) {
-      if (!state.statsOk && !state.gated) showHomeError(res);
-      return false;
-    }
+    if (!ok(res)) return false;
     state.statsOk = true;
-    $('homeError').hidden = true;
     const d = res.data;
     if (Number.isInteger(d.diamondPerAd) && d.diamondPerAd > 0) state.diamondPerAd = d.diamondPerAd;
     loadAdConfig(false); // karta holatlari (provayder sozlanganmi); o'zi throttle qiladi
@@ -726,22 +718,10 @@
     return true;
   }
 
-  async function retryAll() {
-    $('homeError').hidden = true;
-    haptic('light');
-    await Promise.all([refresh(), loadShopPreview(), loadAdConfig(true)]);
-    state.loaded = true;
-    updateWatchState();
-    if (!state.pollId) schedule();
-  }
-
   /** Kurslar va mukofotlar (qiymatlar serverdan: config). */
   function renderRates() {
     const rate = tt('home.rate', { d: nf.format(state.rate.d), r: nf.format(state.rate.r) });
-    plain($('homeRate'), rate);
     plain($('convRate'), rate);
-    tx($('homeTasksHint'), 'home.tasks_hint', { n: nf.format(state.diamondPerAd) });
-    tx($('homeRef'), 'home.ref', { n: nf.format(state.referralDiamondReward) });
     adUnits.forEach((u) => { if (u.reward) u.reward.textContent = '+' + nf.format(state.diamondPerAd) + ' 💎'; });
     $('taskRefReward').textContent = '+' + nf.format(state.referralDiamondReward) + ' 💎';
     $('refReward').textContent = '+' + nf.format(state.referralDiamondReward) + ' 💎';
@@ -749,25 +729,11 @@
     updateConvertState();
   }
 
-  // ---------- Do'kon: Home preview (to'liq do'kon sahifasi keyingi qismda) ----------
-  function shopMiniRow(p) {
-    const row = el('div', 'shop-mini');
-    row.append(el('span', 'name', p.title), el('span', 'val', '🪙 ' + nf.format(p.priceRush)));
-    return row;
-  }
-
-  function renderShopPreview() {
-    const card = $('homeShop');
-    const items = state.shopItems.slice(0, 3);
-    card.hidden = items.length === 0; // do'kon bo'sh bo'lsa Home da ko'rinmaydi
-    $('homeShopList').replaceChildren(...items.map(shopMiniRow));
-  }
-
+  // ---------- Do'kon ro'yxatini yuklash (Home'da preview yo'q; Do'kon sahifasi shu ma'lumotdan foydalanadi) ----------
   async function loadShopPreview() {
     const res = await api('GET', '/api/shop/products');
     if (!ok(res) || !Array.isArray(res.data.items)) return false;
     state.shopItems = res.data.items;
-    renderShopPreview();
     renderShopList();
     return true;
   }
@@ -920,7 +886,7 @@
   }
 
   async function waitConfirmation(sessionId) {
-    for (let i = 0; i < 12; i += 1) {
+    for (let i = 0; i < 24; i += 1) { // ~60 soniya: Monetag postbacki ba'zan kechikib keladi
       await sleep(2500);
       const { data } = await api('GET', '/api/ads/session/' + encodeURIComponent(sessionId));
       if (data && data.status === 'REWARDED') return true;
@@ -1764,7 +1730,6 @@
     initWallet();
     initSubGate();
     $('coinHistMore').addEventListener('click', () => loadCoinHistory(true).catch(() => {}));
-    $('homeRetry').addEventListener('click', retryAll);
     document.addEventListener('visibilitychange', () => {
       root.classList.toggle('paused', document.hidden);
       if (!document.hidden && state.gated && state.gateKind === 'subscribe') checkSubscription().catch(() => {}); // kanaldan qaytganda avto-tekshirish
@@ -1927,7 +1892,6 @@
     document.querySelectorAll('[data-v]').forEach((n) => { n.textContent = numText(n, Number(n.dataset.v)); });
     document.querySelectorAll('.csheet').forEach((n) => { (n.closest('.sheet-bg') || n).remove(); }); // ochiq oyna eski tilda qolmasin
     renderRates();
-    renderShopPreview();
     renderShopList();
     renderOrders();
     renderProfile();
@@ -1959,7 +1923,7 @@
     syncNav();
   }
 
-  window.AdRush = { api, el, nf: nfFixed, tg, state, toast, confirmBox, who, go, stateNode, skeleton, haptic, setBack, syncNav, reduceMotion, setNum, currentTheme };
+  window.AdRush = { api, el, nf: nfFixed, tg, state, toast, confirmBox, who, go, stateNode, skeleton, haptic, setBack, syncNav, reduceMotion, setNum, currentTheme, refresh, setBalances };
 
   init();
 })();

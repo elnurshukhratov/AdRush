@@ -6,6 +6,7 @@ const { requireAdmin } = require('../middlewares/requireAdmin');
 const { userLimiter } = require('../middlewares/rateLimit');
 const ctrl = require('../controllers/adminController');
 const shop = require('../controllers/shopAdminController');
+const coins = require('../controllers/adminCoinController');
 
 // Rasm yuklash: xom bayt (image/*). Haqiqiy format imageService da magic bytes bo'yicha tekshiriladi
 const imageBody = express.raw({ type: ['image/jpeg', 'image/png', 'image/webp'], limit: '5mb' });
@@ -45,5 +46,10 @@ router.post('/uploads/shop-image', userLimiter(20, 'admin-shop-upload'), imageBo
 router.get('/shop/orders', shop.listOrders);
 router.patch('/shop/orders/:id', userLimiter(60, 'admin-shop-order'), shop.updateOrder);
 router.post('/shop/orders/:id/proof', userLimiter(20, 'admin-shop-upload'), imageBody, shop.uploadOrderProof);
+
+// Tanga (Rush Coin): foydalanuvchini Telegram ID / username bo'yicha topish, tanga yuborish va yuborish tarixi
+router.get('/coins/lookup', userLimiter(60, 'admin-coins-lookup'), coins.lookupUser);
+router.post('/coins/grant', userLimiter(20, 'admin-coins-grant'), coins.grantCoins);
+router.get('/coins/history', coins.history);
 
 module.exports = router;

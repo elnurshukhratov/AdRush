@@ -30,12 +30,28 @@ function normalizeIp(ip) {
   return String(ip || '').replace(/^::ffff:/, '');
 }
 
-/** Postback bizning maxfiy tokenimiz bilan kelganini tekshiradi (Monetag imzo bermaydi). */
+/**
+ * Postback bizning maxfiy tokenimiz bilan kelganini tekshiradi (Monetag imzo bermaydi).
+ * Log sababni ANIQ ko'rsatadi (tokenning o'zi hech qachon yozilmaydi, faqat uzunliklar):
+ *  - TOKEN_NOT_CONFIGURED: serverda MONETAG_POSTBACK_TOKEN bo'sh (konteyner .env ni o'qimagan / qayta yaratilmagan)
+ *  - TOKEN_MISSING: postback URL da token= umuman yo'q (Monetag SSP dagi URL to'liq emas)
+ *  - TOKEN_MISMATCH: token bor, lekin server tokeniga teng emas (qoldiq bo'sh joy, boshqa token, kesilgan URL)
+ */
 function verifyPostbackSource(req) {
   const token = req.query.token;
   const expected = config.monetag.postbackToken;
-  if (typeof token !== 'string' || !expected || !safeEqual(token, expected)) {
-    logSuspicious('BAD_CALLBACK_TOKEN', { provider: 'monetag', ip: normalizeIp(req.ip) });
+  let reason = null;
+  if (!expected) reason = 'TOKEN_NOT_CONFIGURED';
+  else if (typeof token !== 'string' || token === '') reason = 'TOKEN_MISSING';
+  else if (!safeEqual(token, expected)) reason = 'TOKEN_MISMATCH';
+  if (reason) {
+    logSuspicious('BAD_CALLBACK_TOKEN', {
+      provider: 'monetag',
+      reason,
+      receivedLen: typeof token === 'string' ? token.length : null,
+      expectedLen: expected ? expected.length : 0,
+      ip: normalizeIp(req.ip),
+    });
     throw new ApiError(403, 'FORBIDDEN', 'Ruxsat yo\'q');
   }
 }

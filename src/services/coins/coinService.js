@@ -20,6 +20,9 @@ const COIN_TX = Object.freeze({
   WALLET_TOPUP: 'WALLET_TOPUP', // +so'm (Telegram to'lovi)
   COIN_BUY_OUT: 'COIN_BUY_OUT', // -so'm (Rush Coin sotib olish)
   COIN_BUY_IN: 'COIN_BUY_IN', // +Rush Coin (sotib olingan)
+  ADMIN_GRANT: 'ADMIN_GRANT', // +Rush Coin (admin paneldan qo'lda yuborilgan)
+  CHESS_WIN: 'CHESS_WIN', // +olmos (shahmat g'alabasi)
+  CHESS_LOSS: 'CHESS_LOSS', // -olmos (shahmat mag'lubiyati)
 });
 
 /** Ledger valyutalari (prisma enum CoinCurrency) va ularga mos User ustuni. UZS — butun so'm. */

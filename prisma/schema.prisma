@@ -29,7 +29,9 @@ enum CoinCurrency {
 //  CONVERT_OUT (-olmos) / CONVERT_IN (+Rush) — olmosni Rush Coin ga almashtirish (refType='CONVERT', bir xil refId),
 //  SHOP_PURCHASE (-Rush) / SHOP_REFUND (+Rush) — do'kon,
 //  WALLET_TOPUP (+so'm) — Telegram to'lovi orqali so'm balansni to'ldirish,
-//  COIN_BUY_OUT (-so'm) / COIN_BUY_IN (+Rush) — so'm hisobidan Rush Coin sotib olish (refType='COIN_BUY', bir xil refId).
+//  COIN_BUY_OUT (-so'm) / COIN_BUY_IN (+Rush) — so'm hisobidan Rush Coin sotib olish (refType='COIN_BUY', bir xil refId),
+//  ADMIN_GRANT (+Rush) — admin paneldan qo'lda yuborilgan tanga (refType='ADMIN_GRANT', refId = yuborish UUID'si; kim yuborgani AuditLog da),
+//  CHESS_WIN (+olmos) / CHESS_LOSS (-olmos) — shahmat o'yini natijasi (refType='CHESS', refId = ChessGame.id).
 // COMPETITION_BET, LOSS_REFUND, COMPETITION_WIN — eski yozuvlar uchun saqlangan (bazada qoladi, ilova ko'rsatmaydi).
 enum CoinTxType {
   ADS_REWARD
@@ -47,6 +49,37 @@ enum CoinTxType {
   WALLET_TOPUP
   COIN_BUY_OUT
   COIN_BUY_IN
+  ADMIN_GRANT
+  CHESS_WIN
+  CHESS_LOSS
+}
+
+// Shahmat: o'yin turi (BOT = kompyuterga qarshi, ONLINE = haqiqiy foydalanuvchi bilan)
+enum ChessMode {
+  BOT
+  ONLINE
+}
+
+enum ChessStatus {
+  ACTIVE
+  FINISHED
+}
+
+// Natija oq tomondan: WHITE = oq yutdi, BLACK = qora yutdi, DRAW = durang
+enum ChessResult {
+  WHITE
+  BLACK
+  DRAW
+}
+
+// O'yin tugash sababi
+enum ChessEnd {
+  CHECKMATE
+  STALEMATE
+  DRAW_RULE // uch marta takrorlanish, 50 yurish qoidasi, material yetishmasligi, kelishilgan durang
+  RESIGN
+  TIMEOUT // onlayn soat tugadi
+  ABANDON // bot o'yini harakatsiz qoldi
 }
 
 // Telegram to'lovi holati: PENDING (invoice yaratildi) -> PAID (successful_payment keldi) | FAILED | CANCELLED
@@ -102,6 +135,9 @@ model User {
   coinTxs  CoinTransaction[]
   shopOrders ShopOrder[]
   payments   Payment[]
+  chessWhite ChessGame[] @relation("ChessWhite")
+  chessBlack ChessGame[] @relation("ChessBlack")
+  chessQueue ChessQueue? @relation("ChessQueueUser")
 
   referredBy User?  @relation("Referral", fields: [referredByUserId], references: [id], onDelete: SetNull)
   referrals  User[] @relation("Referral")
@@ -250,6 +286,9 @@ model ShopOrder {
   createdAt    DateTime        @default(now())
   updatedAt    DateTime        @updatedAt
   resolvedAt   DateTime?
+  // Ommaviy "Tarix" bo'limida ko'rinish vaqti. Faqat status=DELIVERED VA proofImage bor bo'lganda, bir marta (birinchi shart bajarilgan payt) yoziladi.
+  // NULL = Tarixda ko'rinmaydi (bekor qilingan / topshirilmagan / isbot rasmi yo'q). Bir buyurtma = bir qator, shuning uchun Tarixda takror bo'lmaydi.
+  confirmedAt  DateTime?
 
   user    User         @relation(fields: [userId], references: [id], onDelete: Restrict)
   product ShopProduct? @relation(fields: [productId], references: [id], onDelete: SetNull)
@@ -257,6 +296,7 @@ model ShopOrder {
   @@index([userId, id(sort: Desc)])
   @@index([status, id(sort: Desc)])
   @@index([productId])
+  @@index([confirmedAt(sort: Desc), id(sort: Desc)])
 }
 
 model Admin {
@@ -297,4 +337,56 @@ model RequiredChannel {
   updatedAt DateTime @updatedAt
 
   @@index([isActive])
+}
+
+// Shahmat o'yini. Bot o'yinida bitta tomon (whiteUserId yoki blackUserId) NULL va botLevel (1..3) to'ldiriladi.
+// moves — SAN yurishlar ro'yxati (JSON massiv). Soat maydonlari faqat onlayn o'yinda ishlatiladi (bot o'yinida NULL).
+// whiteDelta / blackDelta — shu o'yin uchun berilgan (+) yoki ayirilgan (-) olmos; settleGame yozadi.
+// settledAt — hisob-kitob bajarilgan vaqt (NULL bo'lsa hali hisoblanmagan; ikkinchi marta hisoblanmaydi).
+model ChessGame {
+  id           String      @id @default(uuid()) @db.Uuid
+  mode         ChessMode
+  status       ChessStatus @default(ACTIVE)
+  whiteUserId  Int?
+  blackUserId  Int?
+  botLevel     Int?
+  fen          String
+  moves        Json        @default("[]")
+  moveCount    Int         @default(0)
+  lastMoveAt   DateTime    @default(now())
+  whiteTimeMs  Int?
+  blackTimeMs  Int?
+  incrementMs  Int         @default(0)
+  result       ChessResult?
+  endReason    ChessEnd?
+  whiteDelta   Int         @default(0)
+  blackDelta   Int         @default(0)
+  rewardGranted Boolean    @default(false)
+  settledAt    DateTime?
+  createdAt    DateTime    @default(now())
+
+  white User? @relation("ChessWhite", fields: [whiteUserId], references: [id], onDelete: Restrict)
+  black User? @relation("ChessBlack", fields: [blackUserId], references: [id], onDelete: Restrict)
+
+  // foydalanuvchining faol o'yini (white/black bo'yicha alohida)
+  @@index([whiteUserId, status])
+  @@index([blackUserId, status])
+  // maintenance: harakatsiz / vaqti tugagan faol o'yinlar
+  @@index([status, mode, lastMoveAt])
+  // kunlik bot limiti va juftlik limiti hisobi
+  @@index([whiteUserId, settledAt])
+  @@index([blackUserId, settledAt])
+}
+
+// Onlayn o'yin navbati. Foydalanuvchi bitta (unique). lastSeenAt har holat so'rovida yangilanadi, eskirgan yozuvlar e'tiborga olinmaydi.
+model ChessQueue {
+  id         Int      @id @default(autoincrement())
+  userId     Int      @unique
+  joinedAt   DateTime @default(now())
+  lastSeenAt DateTime @default(now())
+
+  user User @relation("ChessQueueUser", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([joinedAt])
+  @@index([lastSeenAt])
 }

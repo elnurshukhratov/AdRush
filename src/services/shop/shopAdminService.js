@@ -8,6 +8,7 @@ const { record } = require('../audit/auditService');
 const { saveShopImage, saveProofImage, deleteImage } = require('../uploads/imageService');
 const { COIN_TX, CURRENCY, TX_OPTS, applyCoins } = require('../coins/coinService');
 const { clearProductsCache } = require('./shopService');
+const { clearHistoryCache } = require('./shopHistoryService');
 
 const ORDER_STATUSES = Object.freeze(['PENDING', 'PROCESSING', 'DELIVERED', 'CANCELLED']);
 const FINAL_STATUSES = Object.freeze(['DELIVERED', 'CANCELLED']);
@@ -46,6 +47,9 @@ function toAdminOrder(o) {
     status: o.status,
     adminNote: o.adminNote,
     proofImage: o.proofImage,
+    // Ommaviy Tarixda ko'rinadimi: DELIVERED + isbot rasmi (confirmedAt shu ikki shart bajarilganda yoziladi)
+    inHistory: Boolean(o.confirmedAt),
+    confirmedAt: o.confirmedAt ? o.confirmedAt.toISOString() : null,
     imageUrl: o.product ? o.product.imageUrl : null,
     user: { id: o.user.id, telegramId: o.user.telegramId.toString(), username: o.user.username, firstName: o.user.firstName },
     createdAt: o.createdAt.toISOString(),
@@ -151,6 +155,7 @@ async function listOrders({ status = null, limit = 30, cursor = null } = {}) {
 /**
  * Holat va/yoki izohni o'zgartiradi. Bitta tranzaksiyada: user qulfi -> buyurtma qatori FOR UPDATE -> o'tish tekshiruvi.
  * CANCELLED: Rush qaytariladi (SHOP_REFUND, kalit SHOP_REFUND:<orderId>, faqat bir marta) va zaxira bo'lsa +1.
+ * DELIVERED: isbot rasmi allaqachon yuklangan bo'lsa confirmedAt yoziladi — buyurtma ommaviy Tarixga chiqadi (rasm yo'q bo'lsa rasm yuklanganda chiqadi).
  * Qaytadi: { order, notify } — notify faqat holat DELIVERED/CANCELLED ga o'tganda to'ldiriladi (bot xabari tranzaksiyadan keyin yuboriladi).
  */
 async function updateOrder(orderId, { status, adminNote }, actorTelegramId) {
@@ -174,10 +179,15 @@ async function updateOrder(orderId, { status, adminNote }, actorTelegramId) {
       const data = {};
       if (adminNote !== undefined) data.adminNote = adminNote;
       let refunded = false;
+      let published = false;
 
       if (changesStatus) {
         data.status = status;
         if (FINAL_STATUSES.includes(status)) data.resolvedAt = new Date();
+        if (status === 'DELIVERED' && order.proofImage && !order.confirmedAt) {
+          data.confirmedAt = new Date();
+          published = true;
+        }
 
         if (status === 'CANCELLED') {
           const credit = await applyCoins(tx, {
@@ -214,7 +224,7 @@ async function updateOrder(orderId, { status, adminNote }, actorTelegramId) {
           actorTelegramId,
           entityType: 'shop_order',
           entityId: orderId,
-          details: { userId: order.userId, from: order.status, to: updated.status, noteChanged: adminNote !== undefined, refunded, priceRush: order.priceRush },
+          details: { userId: order.userId, from: order.status, to: updated.status, noteChanged: adminNote !== undefined, refunded, publishedToHistory: published, priceRush: order.priceRush },
         },
         tx,
       );
@@ -223,7 +233,7 @@ async function updateOrder(orderId, { status, adminNote }, actorTelegramId) {
         changesStatus && FINAL_STATUSES.includes(status)
           ? { telegramId: order.user.telegramId, language: order.user.language, status, orderId: order.id, productTitle: order.productTitle, priceRush: order.priceRush }
           : null;
-      return { order: updated, notify };
+      return { order: updated, notify, published };
     }, TX_OPTS);
   } catch (err) {
     // SHOP_REFUND:<orderId> allaqachon bor -> qaytarish ikki marta bo'lmaydi
@@ -234,10 +244,14 @@ async function updateOrder(orderId, { status, adminNote }, actorTelegramId) {
   }
 
   if (out.notify) clearProductsCache(); // CANCELLED da zaxira qaytgan bo'lishi mumkin
+  if (out.published) clearHistoryCache(); // yangi tasdiqlangan buyurtma Tarixda darhol ko'rinsin
   return { order: toAdminOrder(out.order), notify: out.notify };
 }
 
-/** Yetkazilganini tasdiqlovchi rasm. Bekor qilingan buyurtmaga yuklanmaydi; eski rasm almashtiriladi. */
+/**
+ * Yetkazilganini tasdiqlovchi rasm. Bekor qilingan buyurtmaga yuklanmaydi; eski rasm almashtiriladi.
+ * Buyurtma allaqachon DELIVERED bo'lsa, rasm yuklangach confirmedAt yoziladi (faqat bir marta) va buyurtma ommaviy Tarixga chiqadi.
+ */
 async function setOrderProof(orderId, buf, actorTelegramId) {
   const existing = await prisma.shopOrder.findUnique({ where: { id: orderId }, select: { id: true, status: true, proofImage: true } });
   if (!existing) throw new ApiError(404, 'NOT_FOUND', 'Buyurtma topilmadi');
@@ -249,9 +263,13 @@ async function setOrderProof(orderId, buf, actorTelegramId) {
   let updated;
   try {
     updated = await prisma.$transaction(async (tx) => {
+      // updateOrder bilan parallel kelganda holat va confirmedAt izchil qolishi uchun buyurtma qatori qulflanadi
+      await tx.$queryRaw`SELECT "id" FROM "ShopOrder" WHERE "id" = ${orderId} FOR UPDATE`;
       const row = await tx.shopOrder.updateMany({ where: { id: orderId, status: { not: 'CANCELLED' } }, data: { proofImage: url } });
       if (row.count !== 1) throw new ApiError(409, 'ORDER_FINAL', 'Bekor qilingan buyurtmaga isbot yuklab bo\'lmaydi');
-      await record('ADMIN_SHOP_ORDER_PROOF', { actorTelegramId, entityType: 'shop_order', entityId: orderId }, tx);
+      // Faqat DELIVERED va hali tasdiqlanmagan bo'lsa (count 0 bo'lishi normal) — Tarixga chiqadi
+      const pub = await tx.shopOrder.updateMany({ where: { id: orderId, status: 'DELIVERED', confirmedAt: null }, data: { confirmedAt: new Date() } });
+      await record('ADMIN_SHOP_ORDER_PROOF', { actorTelegramId, entityType: 'shop_order', entityId: orderId, details: { publishedToHistory: pub.count === 1 } }, tx);
       return tx.shopOrder.findUnique({
         where: { id: orderId },
         include: { user: { select: { id: true, telegramId: true, username: true, firstName: true } }, product: { select: { imageUrl: true } } },
@@ -261,6 +279,7 @@ async function setOrderProof(orderId, buf, actorTelegramId) {
     await deleteImage(url); // DB ga yozilmadi — yetim fayl qolmasin
     throw err;
   }
+  clearHistoryCache(); // rasm almashgan yoki buyurtma yangi tasdiqlangan bo'lishi mumkin
   if (existing.proofImage) await deleteImage(existing.proofImage);
   return toAdminOrder(updated);
 }

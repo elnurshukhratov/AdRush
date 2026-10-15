@@ -118,7 +118,7 @@
     st.root = h('section', { class: 'view', id: 'view-admin', 'data-view': 'admin', hidden: true });
     st.body = h('div', { id: 'admBody' });
     const seg = h('div', { class: 'seg', id: 'admSeg' },
-      ...[['dash', '📊 Dashboard'], ['products', '🛍 Mahsulotlar'], ['orders', '📦 Buyurtmalar'], ['ads', '📺 Reklama'], ['sec', '🛡️ Xavfsizlik'], ['sub', '📢 Kanal']].map(([key, label]) =>
+      ...[['dash', '📊 Dashboard'], ['products', '🛍 Mahsulotlar'], ['orders', '📦 Buyurtmalar'], ['coins', '🪙 Tanga'], ['ads', '📺 Reklama'], ['sec', '🛡️ Xavfsizlik'], ['sub', '📢 Kanal']].map(([key, label]) =>
         h('button', { type: 'button', 'data-tab': key, class: key === st.tab ? 'active' : '', text: label, onclick: () => setTab(key) })));
     st.root.append(h('h2', { text: '⚙️ Admin' }), seg, st.body);
     wrap.appendChild(st.root);
@@ -155,6 +155,7 @@
     if (st.tab === 'sec') return renderSecurity(guard);
     if (st.tab === 'sub') return renderSubscription(guard);
     if (st.tab === 'products') return renderProducts(guard);
+    if (st.tab === 'coins') return renderCoins(guard);
     return renderOrders(guard);
   }
 
@@ -396,6 +397,7 @@
     ADMIN_SHOP_PRODUCT_DEACTIVATE: ['🙈', 'Mahsulot yashirildi'], ADMIN_SHOP_PRODUCT_DELETE: ['🗑', 'Mahsulot o‘chirildi'],
     ADMIN_SHOP_ORDER_UPDATE: ['📦', 'Buyurtma yangilandi'], ADMIN_SHOP_ORDER_PROOF: ['🖼️', 'Isbot rasmi yuklandi'],
     ADMIN_AD_SETTINGS_UPDATED: ['📺', 'Reklama sozlamalari yangilandi'],
+    ADMIN_COIN_GRANT: ['🪙', 'Tanga yuborildi'],
     USER_BLOCKED: ['🚫', 'Foydalanuvchi bloklandi'], USER_UNBLOCKED: ['✅', 'Foydalanuvchi blokdan chiqarildi'],
   };
 
@@ -405,7 +407,9 @@
     const dt = a.details || {};
     const extra = dt.from && dt.to
       ? ` • ${STATUS_UZ[dt.from] || dt.from} → ${STATUS_UZ[dt.to] || dt.to}`
-      : (dt.reason || dt.path || dt.title ? ` • ${dt.reason || dt.path || dt.title}` : '');
+      : dt.amount && dt.toTelegramId
+        ? ` • +${nf.format(dt.amount)} 🪙 → ID ${dt.toTelegramId}`
+        : (dt.reason || dt.path || dt.title ? ` • ${dt.reason || dt.path || dt.title}` : '');
     const who = a.actorTelegramId ? 'ID ' + a.actorTelegramId : 'tizim';
     return h('div', { class: 'frow' },
       h('div', { class: 'fico' + (sus ? ' sus' : ''), text: ico }),
@@ -632,6 +636,15 @@
   }
 
   // ---------- Buyurtmalar ----------
+  /** Ommaviy Tarix holati: faqat DELIVERED + isbot rasmi bo'lsa ko'rinadi (server confirmedAt ni shunda yozadi). */
+  function historyLine(o) {
+    if (o.status === 'DELIVERED') {
+      return h('div', { class: 'ps', text: o.inHistory ? `📜 Ommaviy Tarixda ko‘rinadi • ${fmt(o.confirmedAt)}` : '⚠️ Tarixda ko‘rinmaydi — isbot rasmini yuklang' });
+    }
+    if (o.status !== 'CANCELLED' && o.proofImage) return h('div', { class: 'ps', text: '🖼️ Isbot bor — «Yetkazildi» qilingach Tarixda chiqadi' });
+    return null;
+  }
+
   function orderRow(o) {
     return h('div', { class: 'prow' },
       thumb(o.imageUrl),
@@ -639,6 +652,7 @@
         h('div', { class: 'pt', text: `#${o.id} ${o.productTitle}` }),
         h('div', { class: 'ps', text: userLine(o.user) }),
         h('div', { class: 'ps', text: `${nf.format(o.priceRush)} 🪙 • ${KIND_UZ[o.productKind] || o.productKind} • ${fmt(o.createdAt)}` }),
+        historyLine(o),
         o.adminNote ? h('div', { class: 'note', text: o.adminNote }) : null,
         o.proofImage ? h('img', { src: o.proofImage, alt: '', loading: 'lazy', style: 'display:block;max-width:100%;max-height:120px;border-radius:12px;margin-top:6px' }) : null),
       h('div', { class: 'acts', style: 'flex-direction:column;align-items:flex-end;gap:6px' },
@@ -688,10 +702,12 @@
     sel.disabled = !allowed.length;
     const note = h('textarea', { maxlength: '1000', placeholder: 'Izoh (foydalanuvchiga ko‘rinadi)' });
     note.value = o.adminNote || '';
+    let proof = o.proofImage || null; // Isbot rasmi (yetkazilganini tasdiqlovchi); hint ham unga bog'liq
     const hint = h('p', { class: 'muted', style: 'font-size:12.5px' });
     const syncHint = () => {
       if (sel.value === 'CANCELLED' && o.status !== 'CANCELLED') hint.textContent = `Bekor qilinsa ${nf.format(o.priceRush)} 🪙 foydalanuvchiga bir marta qaytariladi (zaxira bo‘lsa +1). Holatni keyin o‘zgartirib bo‘lmaydi.`;
-      else if (sel.value === 'DELIVERED' && o.status !== 'DELIVERED') hint.textContent = 'Yetkazildi holatidan keyin o‘zgartirib bo‘lmaydi. Foydalanuvchiga bot orqali xabar boradi.';
+      else if (sel.value === 'DELIVERED' && o.status !== 'DELIVERED') hint.textContent = 'Yetkazildi holatidan keyin o‘zgartirib bo‘lmaydi. Foydalanuvchiga bot orqali xabar boradi. ' + (proof ? 'Buyurtma ommaviy Tarixda ko‘rinadi.' : 'Isbot rasmi yuklanmaguncha Tarixda ko‘rinmaydi.');
+      else if (o.status === 'DELIVERED' && !allowed.length && !proof) hint.textContent = 'Buyurtma yetkazilgan, lekin isbot rasmi yo‘q — rasm yuklangach Tarixda ko‘rinadi.';
       else if (!allowed.length) hint.textContent = 'Buyurtma yakunlangan — holatni o‘zgartirib bo‘lmaydi (izohni tahrirlash mumkin).';
       else hint.textContent = '';
     };
@@ -699,8 +715,7 @@
     syncHint();
     const err = h('p', { class: 'errtxt', role: 'alert' });
 
-    // Isbot rasmi (yetkazilganini tasdiqlovchi). Bekor qilingan buyurtmaga yuklanmaydi.
-    let proof = o.proofImage || null;
+    // Isbot rasmi yuklash. Bekor qilingan buyurtmaga yuklanmaydi.
     const proofPrev = h('div', { class: 'thumb lg' });
     const drawProof = () => proofPrev.replaceChildren(...(proof ? [h('img', { src: proof, alt: '' })] : [document.createTextNode('🧾')]));
     drawProof();
@@ -719,7 +734,8 @@
         else {
           proof = up.data.order.proofImage;
           drawProof();
-          toast('Isbot rasmi yuklandi');
+          syncHint();
+          toast(up.data.order.inHistory ? 'Isbot yuklandi — buyurtma Tarixda ko‘rinadi' : 'Isbot rasmi yuklandi');
           render();
         }
       } catch (_e) {
@@ -754,6 +770,173 @@
         o.status !== 'CANCELLED' ? h('div', { class: 'upl field' }, proofPrev, h('div', { class: 'btns', style: 'margin:0' }, ppick), pfile) : null,
         err, save);
     });
+  }
+
+  // ---------- Tanga (Rush Coin) yuborish ----------
+  // "Tanga" = Rush Coin (User.rushCoins). Olmos va so'm balanslariga tegilmaydi. Qidiruv, tekshiruvlar va balans faqat serverda:
+  // klient Telegram ID, miqdor, requestId va tasdiqlash paytida ko'rgan username'ni yuboradi.
+  const COIN_MAX = 1000000;
+  // Joriy urinishning holati. reqId — tarmoq xatosidan keyingi qayta urinishda o'zgarmaydi (server takroriy yuborishni rad etadi).
+  const coinSt = { q: '', user: null, amount: '', reqId: null };
+
+  function uuid() {
+    if (window.crypto && typeof window.crypto.randomUUID === 'function') return window.crypto.randomUUID();
+    const b = new Uint8Array(16);
+    window.crypto.getRandomValues(b);
+    b[6] = (b[6] & 0x0f) | 0x40; b[8] = (b[8] & 0x3f) | 0x80;
+    const x = Array.from(b, (v) => v.toString(16).padStart(2, '0')).join('');
+    return `${x.slice(0, 8)}-${x.slice(8, 12)}-${x.slice(12, 16)}-${x.slice(16, 20)}-${x.slice(20)}`;
+  }
+
+  function grantRow(g) {
+    const who = g.toUsername ? '@' + g.toUsername : g.toFirstName || 'Foydalanuvchi';
+    return h('div', { class: 'frow' },
+      h('div', { class: 'fico', text: '🪙' }),
+      h('div', { class: 'fb' },
+        h('div', { class: 'ft', text: `+${nf.format(g.amount)} 🪙 → ${who}` }),
+        h('div', { class: 'fs', text: `${fmt(g.createdAt)} • Qabul qiluvchi ID ${g.toTelegramId} • Admin ID ${g.adminTelegramId}` })));
+  }
+
+  async function renderCoins(guard) {
+    const searchCard = h('div', { class: 'card' });
+    const targetBox = h('div', {});
+    const feed = h('div', { class: 'card feed' });
+    const moreBtn = h('button', { class: 'btn sec block', type: 'button', text: 'Yana yuklash', hidden: true });
+    st.body.replaceChildren(searchCard, targetBox,
+      h('div', { class: 'card-head' }, h('b', { text: '📜 Yuborish tarixi' })), feed, moreBtn);
+
+    const input = h('input', { type: 'search', placeholder: '@username yoki Telegram ID', maxlength: '64', autocomplete: 'off', autocapitalize: 'off', spellcheck: 'false', value: coinSt.q });
+    const err = h('p', { class: 'errtxt', role: 'alert' });
+    const findBtn = h('button', { class: 'btn', type: 'button', text: 'Topish' });
+
+    // ----- Yuborish tarixi -----
+    let cursor = null;
+    async function loadHistory(reset) {
+      if (reset) { cursor = null; feed.replaceChildren(skeleton(2, 'tall')); }
+      moreBtn.disabled = true;
+      const res = await call('GET', `/coins/history?limit=20${cursor ? '&before=' + cursor : ''}`);
+      moreBtn.disabled = false;
+      if (!guard()) return;
+      if (reset) feed.replaceChildren();
+      if (!ok(res)) {
+        if (reset) feed.appendChild(stateNode('📡', 'Yuklab bo‘lmadi', msgOf(res), 'Qayta urinish', () => loadHistory(true)));
+        else toast(msgOf(res), true);
+        moreBtn.hidden = reset; // "Yana yuklash" xatosida tugma qoladi (qayta bosish mumkin)
+        return;
+      }
+      if (reset && !res.data.items.length) feed.appendChild(stateNode('🪙', 'Hali yuborilmagan', 'Yuborilgan tangalar shu yerda ko‘rinadi.'));
+      for (const g of res.data.items) feed.appendChild(grantRow(g));
+      cursor = res.data.nextCursor;
+      moreBtn.hidden = !cursor;
+    }
+    moreBtn.addEventListener('click', () => loadHistory(false));
+
+    // ----- Topilgan foydalanuvchi + miqdor + tasdiqlash -----
+    function drawTarget() {
+      const u = coinSt.user;
+      if (!u) { targetBox.replaceChildren(); return; }
+      const tgErr = h('p', { class: 'errtxt', role: 'alert' });
+      const amount = h('input', { type: 'text', inputmode: 'numeric', autocomplete: 'off', maxlength: '7', placeholder: 'Rush Coin miqdori', value: coinSt.amount });
+      const preview = h('p', { class: 'muted' });
+      const send = h('button', { class: 'btn block', type: 'button', text: 'Yuborish' });
+      const blockedMsg = u.isBlocked ? 'Foydalanuvchi bloklangan — tanga yuborib bo‘lmaydi.' : (u.isSelf ? 'O‘zingizga tanga yuborib bo‘lmaydi.' : '');
+      const parse = () => (/^\d{1,7}$/.test(amount.value) ? Number(amount.value) : NaN);
+      const valid = (n) => Number.isInteger(n) && n >= 1 && n <= COIN_MAX;
+      const sync = () => {
+        coinSt.amount = amount.value;
+        const n = parse();
+        preview.textContent = valid(n) ? `Yuboriladi: +${nf.format(n)} 🪙 • Yangi balans: ${nf.format(u.rushCoins + n)} 🪙` : '';
+      };
+      amount.addEventListener('input', () => { amount.value = amount.value.replace(/\D/g, ''); tgErr.textContent = ''; sync(); });
+      send.disabled = Boolean(blockedMsg);
+      if (blockedMsg) tgErr.textContent = blockedMsg;
+
+      send.addEventListener('click', async () => {
+        tgErr.textContent = '';
+        const n = parse();
+        if (!valid(n)) { tgErr.textContent = `Miqdor 1 dan ${nf.format(COIN_MAX)} gacha butun son bo‘lishi kerak.`; return; }
+        const who = u.username ? '@' + u.username : u.firstName || 'Foydalanuvchi';
+        if (!(await confirmBox(`${who} (ID ${u.telegramId}) hozirgi balansi ${nf.format(u.rushCoins)} 🪙. +${nf.format(n)} 🪙 yuborilsinmi? Buni qaytarib bo‘lmaydi.`))) return;
+        send.disabled = true;
+        const res = await call('POST', '/coins/grant', { telegramId: u.telegramId, amount: n, requestId: coinSt.reqId, expectedUsername: u.username || null });
+
+        // Holat (reqId, foydalanuvchi) DOM dan oldin yangilanadi — tab almashgan bo'lsa ham eski reqId qayta ishlatilmaydi
+        const reason = res.data && res.data.reason;
+        if (ok(res)) {
+          coinSt.user = res.data.user; coinSt.amount = ''; coinSt.reqId = uuid();
+        } else if (reason === 'USER_CHANGED' && res.data.user) {
+          coinSt.user = res.data.user; coinSt.reqId = uuid();
+        }
+        if (!guard()) return;
+
+        if (ok(res)) {
+          toast(`+${nf.format(n)} 🪙 yuborildi`);
+          err.textContent = '';
+          drawTarget();
+          loadHistory(true);
+          return;
+        }
+        if (reason === 'USER_CHANGED') {
+          err.textContent = msgOf(res);
+          drawTarget();
+          return;
+        }
+        if (reason === 'DUPLICATE_REQUEST') {
+          err.textContent = msgOf(res);
+          await lookup(String(u.telegramId), false);
+          loadHistory(true);
+          return;
+        }
+        send.disabled = Boolean(blockedMsg);
+        tgErr.textContent = res.status === 0
+          ? 'Tarmoq xatosi. Natija noma‘lum — qayta bossangiz ham takroran yuborilmaydi.'
+          : msgOf(res, 'Yuborib bo‘lmadi');
+      });
+
+      targetBox.replaceChildren(h('div', { class: 'card' },
+        h('div', { class: 'prow' },
+          h('div', { class: 'thumb', text: (u.firstName || u.username || '?').slice(0, 1).toUpperCase() }),
+          h('div', { class: 'pb' },
+            h('div', { class: 'pt', text: u.username ? '@' + u.username : u.firstName || 'Foydalanuvchi' }),
+            h('div', { class: 'ps', text: `${u.firstName ? u.firstName + ' • ' : ''}ID ${u.telegramId}` })),
+          u.isBlocked ? badge('CANCELLED', 'Bloklangan') : null),
+        h('div', { class: 'tiles' }, h('div', { class: 'tile' }, h('div', { class: 'ico', text: '🪙' }), h('b', { text: nf.format(u.rushCoins) }), h('span', { text: 'Hozirgi balans (Rush Coin)' }))),
+        field('Yuboriladigan miqdor', amount), preview, tgErr, send));
+      sync();
+    }
+
+    // ----- Qidirish -----
+    async function lookup(q, resetAmount = true) {
+      err.textContent = '';
+      const query = q.trim();
+      if (!query) { err.textContent = 'Telegram ID yoki @username kiriting.'; return false; }
+      findBtn.disabled = true;
+      const res = await call('GET', '/coins/lookup?q=' + encodeURIComponent(query));
+      findBtn.disabled = false;
+      if (!guard()) return false;
+      if (!ok(res)) {
+        coinSt.user = null; coinSt.reqId = null;
+        drawTarget();
+        err.textContent = msgOf(res, 'Qidirib bo‘lmadi');
+        return false;
+      }
+      coinSt.q = query;
+      coinSt.user = res.data.user;
+      coinSt.reqId = uuid(); // har bir yangi tanlov — yangi so'rov
+      if (resetAmount) coinSt.amount = '';
+      drawTarget();
+      return true;
+    }
+    const go = () => lookup(input.value);
+    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') go(); });
+    findBtn.addEventListener('click', go);
+
+    searchCard.append(
+      h('div', { class: 'muted', text: 'Foydalanuvchini Telegram ID yoki @username orqali toping. Rush Coin balansiga qo‘shiladi (olmos va so‘m balanslariga tegilmaydi).' }),
+      h('div', { class: 'search' }, input, findBtn), err);
+
+    drawTarget();
+    loadHistory(true);
   }
 
   // ---------- Rasm: brauzerda kichraytirish + yuklash ----------

@@ -43,7 +43,7 @@ function normalizeIp(ip) {
 function verifyCallbackSource(req) {
   const token = req.query.token;
   if (typeof token !== 'string' || !config.adsgram.rewardToken || !safeEqual(token, config.adsgram.rewardToken)) {
-    logSuspicious('BAD_CALLBACK_TOKEN', { ip: normalizeIp(req.ip) });
+    logSuspicious('BAD_CALLBACK_TOKEN', { provider: 'adsgram', ip: normalizeIp(req.ip) });
     throw new ApiError(403, 'FORBIDDEN', 'Ruxsat yo\'q');
   }
 

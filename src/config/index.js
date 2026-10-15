@@ -227,6 +227,20 @@ const config = Object.freeze({
     coinPackages, // tayyor paketlar (Rush Coin miqdori)
   }),
 
+  // Shahmat (Home). Olmos qiymatlari va suiiste'moldan himoya limitlari — hammasi serverda, klientdan hech narsa qabul qilinmaydi.
+  // 0 = cheklovsiz (faqat limit sozlamalarida: CHESS_BOT_DAILY_WIN_LIMIT, CHESS_PAIR_DAILY_LIMIT).
+  chess: Object.freeze({
+    winDiamonds: int('CHESS_WIN_DIAMONDS', 3, { min: 1 }), // yutuq uchun beriladigan olmos
+    lossDiamonds: int('CHESS_LOSS_DIAMONDS', 1), // mag'lubiyat uchun ayiriladigan olmos (balans yetmasa yetganicha)
+    minUserMoves: int('CHESS_MIN_USER_MOVES', 6), // olmos hisoblanishi uchun foydalanuvchining minimal yurishlari
+    botDailyWinLimit: int('CHESS_BOT_DAILY_WIN_LIMIT', 10), // bot o'yinida kuniga (UTC) olmos beriladigan yutuqlar soni
+    pairDailyLimit: int('CHESS_PAIR_DAILY_LIMIT', 3), // bitta raqib bilan 24 soatda olmos beriladigan onlayn o'yinlar soni
+    botIdleMinutes: int('CHESS_BOT_IDLE_MINUTES', 30, { min: 1 }), // bot o'yini shuncha harakatsiz tursa foydalanuvchi yutqazadi
+    onlineTimeSeconds: int('CHESS_ONLINE_TIME_SECONDS', 300, { min: 30 }), // onlayn o'yinda har tomonning umumiy vaqti
+    onlineIncrementSeconds: int('CHESS_ONLINE_INCREMENT_SECONDS', 0), // har yurishdan keyin qo'shiladigan vaqt
+    queueStaleSeconds: int('CHESS_QUEUE_STALE_SECONDS', 45, { min: 5 }), // navbatda shuncha vaqt "ko'rinmagan" yozuv eskirgan hisoblanadi
+  }),
+
   ads: Object.freeze({
     rewardTestMode, // faqat development/test (production'da config xato beradi)
     sessionTtlMs: int('AD_SESSION_TTL_SEC', 600, { min: 30 }) * 1000,

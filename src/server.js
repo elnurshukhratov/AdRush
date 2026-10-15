@@ -7,6 +7,7 @@ const { getRedis, disconnectRedis } = require('./db/redis');
 const { createApp } = require('./app');
 const { createBot, createWebhookHandler, startBot, stopBot } = require('./bot');
 const { startMaintenance } = require('./jobs/maintenance');
+const chessBot = require('./services/chess/chessBot');
 
 async function main() {
   await connectDb();
@@ -43,6 +44,7 @@ async function main() {
     try {
       await stopBot(bot);
       await maintenance.stop();
+      await chessBot.shutdown(); // bot worker'larini yopish
       await new Promise((resolve) => {
         server.close(resolve); // yangi ulanish qabul qilinmaydi, bajarilayotgan so'rovlar tugaydi
         server.closeIdleConnections(); // keep-alive bo'sh ulanishlar shutdownni kechiktirmasin

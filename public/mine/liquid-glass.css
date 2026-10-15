@@ -68,7 +68,7 @@
   --scrim:rgba(20,30,60,.25); --scrim-lb:rgba(10,14,30,.8); --o-a:.42;
 }
 body{font-family:var(--font-body);letter-spacing:-.011em;-webkit-font-smoothing:antialiased}
-h1,h2,.brand,.coin-bal,.stat b,.pname,.sheet h3 {font-family:var(--font-display)}
+h1,h2,.brand,.stat b,.pname,.sheet h3 {font-family:var(--font-display)}
 h1 {font-size:34px;font-weight:700;letter-spacing:-.04em}
 h2{font-size:28px;font-weight:700;letter-spacing:-.034em}
 .sec{font-size:20px;font-weight:700}
