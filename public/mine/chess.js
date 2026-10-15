@@ -29,6 +29,7 @@
       promo: 'Piyoda o‘rniga figura tanlang', q: 'Farzin', r: 'Rux', b: 'Fil', n: 'Ot',
       err_load: 'O‘yinni yuklab bo‘lmadi', err_net: 'Internet aloqasini tekshiring.', err_generic: 'Xatolik yuz berdi. Qayta urinib ko‘ring.',
       retry: 'Qayta urinish', synced: 'Holat yangilandi', illegal: 'Bunday yurish mumkin emas',
+      unsent: 'Yurish yuborilmadi — aloqa tiklanishi bilan qayta yuboriladi', sending_slow: 'Yurish yuborilmoqda…',
       res_win: '🏆 G‘alaba!', res_lose: 'Mag‘lubiyat', res_draw: '🤝 Durang',
       rs_CHECKMATE: 'Mat', rs_STALEMATE: 'Pat', rs_DRAW_RULE: 'Durang qoidasi (takrorlanish, 50 yurish yoki material yetishmasligi)',
       rs_RESIGN: 'Taslim bo‘lish', rs_TIMEOUT: 'Vaqt tugadi', rs_ABANDON: 'O‘yin tashlab ketildi',
@@ -52,6 +53,7 @@
       promo: 'Выберите фигуру вместо пешки', q: 'Ферзь', r: 'Ладья', b: 'Слон', n: 'Конь',
       err_load: 'Не удалось загрузить игру', err_net: 'Проверьте подключение к интернету.', err_generic: 'Произошла ошибка. Попробуйте ещё раз.',
       retry: 'Повторить', synced: 'Состояние обновлено', illegal: 'Такой ход невозможен',
+      unsent: 'Ход не отправлен — будет отправлен при появлении связи', sending_slow: 'Отправляем ход…',
       res_win: '🏆 Победа!', res_lose: 'Поражение', res_draw: '🤝 Ничья',
       rs_CHECKMATE: 'Мат', rs_STALEMATE: 'Пат', rs_DRAW_RULE: 'Правило ничьей (повторение, 50 ходов или недостаток материала)',
       rs_RESIGN: 'Сдача', rs_TIMEOUT: 'Время вышло', rs_ABANDON: 'Игра брошена',
@@ -75,6 +77,7 @@
       promo: 'Choose a piece for the pawn', q: 'Queen', r: 'Rook', b: 'Bishop', n: 'Knight',
       err_load: 'Could not load the game', err_net: 'Check your internet connection.', err_generic: 'Something went wrong. Please try again.',
       retry: 'Retry', synced: 'Position updated', illegal: 'That move is not allowed',
+      unsent: 'Move not sent — it will be resent when the connection is back', sending_slow: 'Sending move…',
       res_win: '🏆 You won!', res_lose: 'You lost', res_draw: '🤝 Draw',
       rs_CHECKMATE: 'Checkmate', rs_STALEMATE: 'Stalemate', rs_DRAW_RULE: 'Draw rule (repetition, 50 moves or insufficient material)',
       rs_RESIGN: 'Resignation', rs_TIMEOUT: 'Time ran out', rs_ABANDON: 'Game abandoned',
@@ -95,7 +98,8 @@
   const FILES = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'];
   const PIECE = { k: '♚', q: '♛', r: '♜', b: '♝', n: '♞', p: '♟' };
   const TEXT_VS = '\uFE0E'; // iOS pieces emoji bo'lib ketmasin
-  const BOT_RETRY_MAX = 6;
+  const MOVE_TRIES = 3; // yurishni yuborish urinishlari (expectedMoveCount tufayli qayta yuborish xavfsiz — ikki marta qo'llanmaydi)
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
   const S = {
     panel: 'loading', // loading | error | start | game
@@ -109,8 +113,11 @@
     color: 'random',
     starting: false,
     loading: false,
-    botTries: 0,
-    botTimer: 0,
+    out: null, // serverga hali yetib bormagan yurish { body, from, to } (qayta yuboriladi)
+    outTimer: 0,
+    opt: null, // optimistik yurish { from, to, promotion, base, map } — server tasdiqlaguncha taxtada ko'rinib turadi
+    shownCount: 0, // hozir taxtada ko'rsatilgan pozitsiyaning moveCount'i (animatsiya takrorlanmasligi uchun)
+    wId: 0, // long-poll sikli identifikatori (yangisi eskisini to'xtatadi)
     errKey: 'err_net',
     modal: null, // natija oynasi (lazy)
     shownFor: null, // natija oynasi qaysi o'yin uchun ko'rsatilgan
@@ -123,9 +130,7 @@
     qBusy: false,
     qFails: 0,
     searchTick: 0,
-    // onlayn: o'yin (polling + soat)
-    gTimer: 0,
-    gBusy: false,
+    // o'yin: long-poll (/wait) + soat
     gFails: 0,
     clock: null, // { w, b, run, at } — serverdan kelgan qiymat + qabul qilingan vaqt (ko'rsatish uchun lokal sanoq)
     tick: 0,
@@ -192,8 +197,8 @@
     S.sel = null;
     S.pending = null;
     closeResult();
-    clearTimeout(S.botTimer);
-    clearTimeout(S.gTimer);
+    S.opt = null;
+    S.wId += 1; // long-poll to'xtaydi
     stopTick();
     S.clock = null;
     setConn(false);
@@ -253,28 +258,35 @@
 
   // ---------- O'yin holati ----------
   function applyGame(g) {
+    const prev = S.game && S.game.id === g.id ? S.game : null;
+    const fresh = !prev || g.moveCount > S.shownCount; // taxtada hali ko'rinmagan yangi yurish (raqib / bot)
     S.game = g;
+    S.opt = null;
+    S.out = null;
+    clearTimeout(S.outTimer);
     S.sel = null;
     S.pending = null;
     $('chessPromo').hidden = true;
     stopSearch();
-    clearTimeout(S.gTimer);
     S.gFails = 0;
     S.flagAt = 0;
     setConn(false);
     setClock(g);
     show('game');
     renderGame();
+    if (prev && fresh && g.lastMove) slideMove(g.lastMove); // raqib / bot yurishi: figura sirpanib boradi
+    if (prev && fresh && prev.yourColor && g.turn === g.yourColor && g.status === 'ACTIVE') A.haptic('light');
+    S.shownCount = g.moveCount;
     if (g.status === 'FINISHED') {
-      clearTimeout(S.botTimer);
+      S.wId += 1;
       stopTick();
       A.refresh().catch(() => {}); // global balans: yuqori panel, Vazifalar, Profil
       A.haptic(g.yourDelta > 0 ? 'success' : g.yourDelta < 0 ? 'warning' : 'light');
       if (S.shownFor !== g.id) { S.shownFor = g.id; openResult(); }
       return;
     }
-    ensureBotMove();
-    if (g.mode === 'ONLINE') { ensureTick(); gameLoop(pollDelay()); }
+    if (g.mode === 'ONLINE') ensureTick();
+    startWait();
   }
 
   // ---------- Onlayn: soat (server qiymati + lokal sanoq) ----------
@@ -325,45 +337,58 @@
     S.tick = 0;
   }
 
-  // ---------- Onlayn: o'yin pollingi ----------
+  // ---------- O'yin: long-poll (raqib / bot yurishi kutmasdan keladi) ----------
+  const isActive = () => Boolean(S.game && S.game.status === 'ACTIVE');
   const isOnlineActive = () => Boolean(S.game && S.game.mode === 'ONLINE' && S.game.status === 'ACTIVE');
 
-  /** Raqib navbatida ≈1 s, o'z navbatingda 3 s; aloqa uzilganda asta-sekin kamayadi (maks. 5 s). */
-  function pollDelay() {
-    if (S.gFails) return Math.min(5000, 1500 + S.gFails * 1000);
-    return S.game && S.game.turn !== S.game.yourColor ? 1000 : 3000;
+  /** Server o'yin o'zgarguncha (≤20 s) so'rovni ushlab turadi va o'zgarishi bilan javob beradi: polling kechikishi yo'q. */
+  function startWait() {
+    if (!isActive() || document.hidden) return;
+    S.wId += 1;
+    waitCycle(S.wId).catch(() => {});
   }
 
-  function gameLoop(delay) {
-    clearTimeout(S.gTimer);
-    S.gTimer = setTimeout(() => { pollGame().catch(() => {}); }, delay);
-  }
-
-  async function pollGame() {
-    if (!isOnlineActive() || S.panel !== 'game' || document.hidden) return; // fonda to'xtaydi, visibilitychange davom ettiradi
-    if (S.busy || S.loading || S.gBusy) { gameLoop(pollDelay()); return; }
-    const cur = S.game;
-    S.gBusy = true;
-    const res = await api('GET', '/api/chess/games/' + cur.id);
-    S.gBusy = false;
-    if (!S.game || S.game.id !== cur.id) return; // o'yin almashgan
-    if (S.busy) { gameLoop(pollDelay()); return; } // yurish ketayotgan paytdagi javob eskirgan
-    if (!ok(res)) {
-      if (reasonOf(res) === 'GAME_NOT_FOUND') { await showStart(); return; }
-      S.gFails += 1;
-      setConn(true);
-      if (isOnlineActive()) gameLoop(pollDelay());
-      return;
+  function syncClockOnly(d) {
+    if (S.game && S.game.mode === 'ONLINE' && d.whiteTimeMs != null && d.blackTimeMs != null) {
+      S.clock = { w: d.whiteTimeMs, b: d.blackTimeMs, run: d.turn, at: Date.now() };
+      tickClocks();
     }
-    S.gFails = 0;
-    setConn(false);
-    setNet(false);
-    const g = res.data.game;
-    if (g.moveCount < S.game.moveCount) { gameLoop(pollDelay()); return; } // eskirgan javob
-    if (g.moveCount !== S.game.moveCount || g.status !== S.game.status) { applyGame(g); return; } // raqib yurdi / o'yin tugadi
-    setClock(g); // holat o'zgarmagan: faqat soat serverga moslanadi (tanlangan figura saqlanadi)
-    tickClocks();
-    gameLoop(pollDelay());
+  }
+
+  async function waitCycle(id) {
+    while (id === S.wId) {
+      const g = S.game;
+      if (!g || g.status !== 'ACTIVE' || S.panel !== 'game' || document.hidden) return;
+      if (S.busy) { await sleep(120); continue; } // yurish ketmoqda: javobi o'zi yangilaydi
+      const url = '/api/chess/games/' + g.id + '/wait?since=' + g.moveCount + '&st=' + g.status + '&ms=20000';
+      const res = await api('GET', url, undefined, { timeout: 26000, retry: false });
+      if (id !== S.wId) return;
+      if (S.busy) continue;
+      if (!ok(res)) {
+        if (reasonOf(res) === 'GAME_NOT_FOUND') { await showStart(); return; }
+        if (res.status === 401 || res.status === 403) return;
+        S.gFails += 1;
+        if (S.gFails >= 2) setConn(true);
+        await sleep(Math.min(4000, 500 * S.gFails));
+        continue;
+      }
+      S.gFails = 0;
+      setConn(false);
+      setNet(false);
+      const d = res.data;
+      if (d.changed && d.game) {
+        const ng = d.game;
+        if (ng.id !== g.id) return;
+        if (ng.moveCount < S.game.moveCount) continue; // eskirgan javob
+        if (ng.moveCount !== S.game.moveCount || ng.status !== S.game.status) { applyGame(ng); return; } // yangi sikl applyGame ichida
+      } else syncClockOnly(d);
+    }
+  }
+
+  /** Soat nolga yetganda (yoki qo'lda) holatni darhol so'raydi. */
+  async function pollGame() {
+    if (!isActive() || S.panel !== 'game' || S.busy || S.loading) return;
+    await reloadGame();
   }
 
   // ---------- Onlayn: navbat ----------
@@ -388,7 +413,7 @@
     renderSearchTimer();
     clearInterval(S.searchTick);
     S.searchTick = setInterval(renderSearchTimer, 1000);
-    queueLoop(2000);
+    queueLoop(1200);
   }
 
   function stopSearch() {
@@ -460,13 +485,13 @@
       if (reasonOf(res) === 'ALREADY_ACTIVE') { stopSearch(); await loadCurrent(false); return; }
       S.qFails += 1;
       $('chessSearchConn').hidden = false;
-      queueLoop(Math.min(6000, 2000 + S.qFails * 1000));
+      queueLoop(Math.min(5000, 1200 + S.qFails * 800));
       return;
     }
     S.qFails = 0;
     $('chessSearchConn').hidden = true;
     if (!(await onQueueData(res.data))) { stopSearch(); await showStart(); return; }
-    if (S.searching && !document.hidden) queueLoop(2000);
+    if (S.searching && !document.hidden) queueLoop(1200);
   }
 
   async function cancelSearch() {
@@ -486,17 +511,7 @@
     S.cancelling = false;
     $('chessSearchCancel').disabled = false;
     if (res.status !== 401 && res.status !== 403) A.toast(t(res.status === 0 ? 'err_net' : 'err_generic'), true);
-    if (!document.hidden) queueLoop(2000);
-  }
-
-  /** Botning navbatida qolgan bo'lsa (server o'zi tiklaydi) — qisqa pauza bilan holatni qayta so'raydi. */
-  function ensureBotMove() {
-    clearTimeout(S.botTimer);
-    const g = S.game;
-    if (!g || g.status !== 'ACTIVE' || g.mode !== 'BOT' || g.turn === g.yourColor) { S.botTries = 0; return; }
-    if (S.botTries >= BOT_RETRY_MAX) { S.botTries = 0; setNet(true); return; }
-    S.botTries += 1;
-    S.botTimer = setTimeout(() => { reloadGame().catch(() => {}); }, 1500);
+    if (!document.hidden) queueLoop(1200);
   }
 
   function parseFen(fen) {
@@ -516,21 +531,95 @@
     return el('span', 'pc ' + (w ? 'w' : 'b') + (cls ? ' ' + cls : ''), PIECE[ch.toLowerCase()] + TEXT_VS);
   }
 
+  /** Optimistik yurish bo'lsa navbat allaqachon raqibda. */
+  const turnNow = () => {
+    const g = S.game;
+    if (!g) return 'w';
+    return S.opt ? (g.turn === 'w' ? 'b' : 'w') : g.turn;
+  };
+
   const isMyTurn = () => {
     const g = S.game;
-    return Boolean(g && g.status === 'ACTIVE' && g.turn === g.yourColor && !S.busy);
+    return Boolean(g && g.status === 'ACTIVE' && g.turn === g.yourColor && !S.busy && !S.opt);
   };
+
+  /** Faqat ko'rsatish uchun: yurishni taxta xaritasiga qo'llaydi (qonuniylikni server hal qiladi; bu yerda tekshirilmaydi). */
+  function applyOpt(map, from, to, promo) {
+    const m = Object.assign({}, map);
+    const ch = m[from];
+    if (!ch) return m;
+    const lower = ch.toLowerCase();
+    if (lower === 'p' && from[0] !== to[0] && !m[to]) delete m[to[0] + from[1]]; // en passant
+    if (lower === 'k' && Math.abs(FILES.indexOf(to[0]) - FILES.indexOf(from[0])) === 2) { // rokirovka: rux ham ko'chadi
+      const king = to[0] === 'g';
+      const rf = (king ? 'h' : 'a') + from[1];
+      const rt = (king ? 'f' : 'd') + from[1];
+      if (m[rf]) { m[rt] = m[rf]; delete m[rf]; }
+    }
+    delete m[from];
+    m[to] = promo ? (ch === ch.toUpperCase() ? promo.toUpperCase() : promo) : ch;
+    return m;
+  }
+
+  /** Figura qo'yilgan maydonga sirpanib boradi (FLIP): taxta qayta chizilgandan keyin chaqiriladi. */
+  function slideMove(lm) {
+    if (!lm || (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches)) return;
+    const board = $('chessBoard');
+    const from = board.querySelector('[data-sq="' + lm.from + '"]');
+    const to = board.querySelector('[data-sq="' + lm.to + '"]');
+    const pc = to && to.querySelector('.pc');
+    if (!from || !pc) return;
+    const a = from.getBoundingClientRect();
+    const b = to.getBoundingClientRect();
+    const dx = a.left - b.left;
+    const dy = a.top - b.top;
+    if (!dx && !dy) return;
+    pc.classList.add('mv');
+    pc.style.transition = 'none';
+    pc.style.transform = 'translate(' + dx + 'px,' + dy + 'px)';
+    void pc.offsetWidth; // reflow
+    pc.style.transition = 'transform .2s cubic-bezier(.2,.8,.2,1)';
+    pc.style.transform = '';
+    setTimeout(() => { pc.style.transition = ''; pc.classList.remove('mv'); }, 280);
+  }
+
+  // Olingan figuralar va material farqi (taxtadagi figuralardan; klient qoida hisoblamaydi, faqat sanaydi)
+  const START_CNT = { p: 8, n: 2, b: 2, r: 2, q: 1 };
+  const PVAL = { p: 1, n: 3, b: 3, r: 5, q: 9 };
+  function materialOf(map) {
+    const cnt = { w: { p: 0, n: 0, b: 0, r: 0, q: 0 }, b: { p: 0, n: 0, b: 0, r: 0, q: 0 } };
+    for (const sq of Object.keys(map)) {
+      const ch = map[sq];
+      const k = ch.toLowerCase();
+      if (cnt.w[k] === undefined) continue; // shoh
+      cnt[ch === ch.toUpperCase() ? 'w' : 'b'][k] += 1;
+    }
+    const sum = (c) => Object.keys(PVAL).reduce((x, k) => x + PVAL[k] * c[k], 0);
+    const lost = (c) => ['q', 'r', 'b', 'n', 'p'].map((k) => [k, Math.max(0, START_CNT[k] - c[k])]).filter((x) => x[1] > 0);
+    return { diff: sum(cnt.w) - sum(cnt.b), lostW: lost(cnt.w), lostB: lost(cnt.b) };
+  }
+
+  /** `color` tomon yutib olgan figuralar (qarshi rangning yo'qotganlari) + ustunlik "+N". */
+  function capNode(mat, color) {
+    const wrap = el('span', 'ccap');
+    const lost = color === 'w' ? mat.lostB : mat.lostW;
+    for (const [k, n] of lost) for (let i = 0; i < n; i += 1) wrap.appendChild(el('span', 'cp ' + (color === 'w' ? 'b' : 'w'), PIECE[k] + TEXT_VS));
+    const adv = color === 'w' ? mat.diff : -mat.diff;
+    if (adv > 0) wrap.appendChild(el('em', null, '+' + adv));
+    return wrap;
+  }
 
   function renderBoard() {
     const g = S.game;
     const board = $('chessBoard');
-    const map = parseFen(g.fen);
+    const map = S.opt ? S.opt.map : parseFen(g.fen);
+    const lm = S.opt ? { from: S.opt.from, to: S.opt.to } : g.lastMove;
     const flip = g.yourColor === 'b';
     const ranks = flip ? [1, 2, 3, 4, 5, 6, 7, 8] : [8, 7, 6, 5, 4, 3, 2, 1];
     const files = flip ? FILES.slice().reverse() : FILES;
     const targets = new Set(S.sel && g.legalMoves && g.legalMoves[S.sel] ? g.legalMoves[S.sel] : []);
     let kingSq = null;
-    if (g.inCheck) {
+    if (g.inCheck && !S.opt) {
       const k = g.turn === 'w' ? 'K' : 'k';
       kingSq = Object.keys(map).find((sq) => map[sq] === k) || null;
     }
@@ -545,7 +634,7 @@
         b.setAttribute('role', 'gridcell');
         const ch = map[sq];
         b.setAttribute('aria-label', ch ? sq + ' ' + ch : sq);
-        if (g.lastMove && (g.lastMove.from === sq || g.lastMove.to === sq)) b.classList.add('last');
+        if (lm && (lm.from === sq || lm.to === sq)) b.classList.add('last');
         if (S.sel === sq) b.classList.add('sel');
         if (kingSq === sq) b.classList.add('chk');
         if (targets.has(sq)) { b.classList.add('tgt'); if (ch) b.classList.add('cap'); }
@@ -557,20 +646,22 @@
     });
     board.replaceChildren(frag);
     board.classList.toggle('locked', !isMyTurn());
-    board.classList.toggle('wait', S.busy);
+    board.classList.toggle('wait', Boolean(S.opt));
   }
 
-  function playerBar(node, label, active, color) {
+  function playerBar(node, label, active, color, mat) {
     node.classList.toggle('turn', active);
     const right = el('div', 'cbar-r');
     if (S.clock) {
       const c = el('b', 'cclock');
       c.dataset.c = color; // onlayn: soat; tickClocks to'ldiradi
       right.appendChild(c);
-    } else {
-      right.appendChild(el('i', null, active ? t(node.id === 'chessMe' ? 'turn_you' : 'turn_opp') : ''));
+    } else if (active) {
+      right.appendChild(el('i', null, t(node.id === 'chessMe' ? 'turn_you' : 'turn_opp')));
     }
-    node.replaceChildren(el('span', null, label), right);
+    const left = el('div', 'cbar-l');
+    left.append(el('span', 'cdot'), el('span', 'cname', label), capNode(mat, color));
+    node.replaceChildren(left, right);
   }
 
   function renderGame() {
@@ -582,14 +673,17 @@
       ? t('bot', { lv: t('lv' + (g.opponent.level || 2)) })
       : '👤 ' + (g.opponent && g.opponent.name ? g.opponent.name : t('opp').replace('👤 ', '')); // ism — textContent orqali (XSS yo'q)
     const oppColor = g.yourColor === 'w' ? 'b' : 'w';
-    playerBar($('chessOpp'), oppLabel, active && g.turn !== g.yourColor, oppColor);
-    playerBar($('chessMe'), t('you'), active && g.turn === g.yourColor, g.yourColor);
+    const turn = turnNow();
+    const mat = materialOf(S.opt ? S.opt.map : parseFen(g.fen));
+    playerBar($('chessOpp'), oppLabel, active && turn !== g.yourColor, oppColor, mat);
+    playerBar($('chessMe'), t('you'), active && turn === g.yourColor, g.yourColor, mat);
     renderBoard();
 
     const st = $('chessStatus');
     st.className = 'chess-status';
     if (!active) { st.textContent = t('st_over'); }
-    else if (g.turn !== g.yourColor || S.busy) { st.textContent = t(online ? 'st_wait' : 'st_think'); st.classList.add('think'); }
+    else if (S.opt && !S.busy) { st.textContent = t('unsent'); st.classList.add('bad'); }
+    else if (turn !== g.yourColor || S.busy) { st.textContent = t(online ? 'st_wait' : 'st_think'); st.classList.add('think'); }
     else if (g.inCheck) { st.textContent = t('st_check'); st.classList.add('bad'); }
     else st.textContent = t('st_you');
 
@@ -745,29 +839,64 @@
     return 'err_generic';
   }
 
-  async function sendMove(from, to, promotion) {
+  /**
+   * Yurish: taxtada DARHOL ko'rinadi (optimistik), keyin serverga ketadi. Tarmoq xatosi / 5xx da {MOVE_TRIES} marta qayta yuboriladi —
+   * expectedMoveCount tufayli bir yurish ikki marta qo'llanmaydi (yetib borgan bo'lsa MOVE_CONFLICT keladi va holat jimgina yangilanadi).
+   * Hammasi muvaffaqiyatsiz bo'lsa yurish taxtada saqlanadi va aloqa tiklanishi bilan avtomatik qayta yuboriladi.
+   */
+  function sendMove(from, to, promotion) {
     const g = S.game;
-    S.busy = true;
+    if (!g || S.busy || S.out) return Promise.resolve();
+    const body = { from, to, expectedMoveCount: g.moveCount };
+    if (promotion) body.promotion = promotion;
     S.sel = null;
     S.pending = null;
     $('chessPromo').hidden = true;
-    renderGame(); // "Bot o'ylayapti…" — taxta server javobi kelguncha o'zgarmaydi (optimistik emas)
-    const body = { from, to, expectedMoveCount: g.moveCount };
-    if (promotion) body.promotion = promotion;
-    const res = await api('POST', '/api/chess/games/' + g.id + '/move', body, { timeout: 15000 });
+    S.opt = { from, to, promotion, base: g.moveCount, map: applyOpt(parseFen(g.fen), from, to, promotion) };
+    S.out = { id: g.id, body };
+    S.shownCount = g.moveCount + 1;
+    if (S.clock && g.mode === 'ONLINE') { // mening soatim darhol to'xtaydi, raqibniki yura boshlaydi
+      S.clock = { w: clockMs('w'), b: clockMs('b'), run: g.yourColor === 'w' ? 'b' : 'w', at: Date.now() };
+    }
+    A.haptic('select');
+    const sent = flushMove(); // S.busy sinxron o'rnatiladi (birinchi await gacha), shuning uchun render "yuborilmadi" demaydi
+    renderGame();
+    slideMove({ from, to });
+    return sent;
+  }
+
+  async function flushMove() {
+    const out = S.out;
+    if (!out || S.busy) return;
+    clearTimeout(S.outTimer);
+    S.busy = true;
+    setNet(false);
+    let res = null;
+    let tries = 0;
+    for (; tries < MOVE_TRIES; tries += 1) {
+      res = await api('POST', '/api/chess/games/' + out.id + '/move', out.body, { timeout: tries === 0 ? 10000 : 12000, retry: false });
+      if (res.status !== 0 && res.status < 500) break; // server javob berdi
+      if (tries < MOVE_TRIES - 1) await sleep(400 * (tries + 1));
+    }
     S.busy = false;
+    if (!S.game || S.game.id !== out.id) { S.out = null; S.opt = null; return; } // o'yin almashgan
     if (ok(res)) { setNet(false); applyGame(res.data.game); return; }
 
     if (res.status === 0 || res.status >= 500) {
-      // yurish yetib borgan-bormaganini bilmaymiz: qayta YUBORILMAYDI, holat qayta yuklanadi
+      // Hozircha yetib bormadi: yurish taxtada qoladi, aloqa tiklanishi bilan qayta yuboriladi (idempotent)
       setNet(true);
       renderGame();
+      S.outTimer = setTimeout(() => { flushMove().catch(() => {}); }, 2500);
       return;
     }
-    if (res.status === 401 || res.status === 403) { renderGame(); return; } // mine.js gate/obuna oynasini o'zi ko'rsatadi
+    if (res.status === 401 || res.status === 403) { S.out = null; S.opt = null; renderGame(); return; } // mine.js gate/obuna oynasini o'zi ko'rsatadi
+    // Server rad etdi (409 / 422 / 400). Qayta urinishdan keyingi MOVE_CONFLICT — avvalgi urinish yetib borgan: jim yangilanadi
+    S.out = null;
+    S.opt = null;
     const key = failMessage(res);
-    A.toast(t(key), key === 'err_generic');
-    await reloadGame(); // 409 / noqonuniy yurish: holat qayta yuklanadi
+    if (tries === 0 || key !== 'synced') A.toast(t(key), key === 'err_generic');
+    renderGame();
+    await reloadGame();
   }
 
   async function resign() {
@@ -805,7 +934,11 @@
     if (gated || S.loading || S.busy) return;
     if (S.panel === 'search') return; // qidiruv polling bilan davom etmoqda
     if (S.panel === 'game' && S.game && S.game.status === 'FINISHED') return; // natija ko'rsatilgan — foydalanuvchi o'zi yopadi
-    if (S.panel === 'game' && S.game) { loadCurrent(true).catch(() => {}); return; }
+    if (S.panel === 'game' && S.game) {
+      if (S.out) { flushMove().catch(() => {}); return; }
+      loadCurrent(true).catch(() => {});
+      return;
+    }
     loadCurrent(false).catch(() => {});
   }
 
@@ -858,7 +991,11 @@
     $('chessSearchCancel').addEventListener('click', () => { A.haptic('light'); cancelSearch().catch(() => {}); });
     $('chessResign').addEventListener('click', () => { resign().catch(() => {}); });
     $('chessRetry').addEventListener('click', () => { A.haptic('light'); loadCurrent(false).catch(() => {}); });
-    $('chessNetRetry').addEventListener('click', () => { A.haptic('light'); reloadGame().catch(() => {}); });
+    $('chessNetRetry').addEventListener('click', () => {
+      A.haptic('light');
+      if (S.out) flushMove().catch(() => {});
+      else reloadGame().catch(() => {});
+    });
     $('chessAgain').addEventListener('click', () => { showStart().catch(() => {}); });
     $('chessHome').addEventListener('click', () => { showStart().catch(() => {}); });
 
@@ -868,17 +1005,26 @@
       if (S.game) renderGame();
       renderResultModal();
     });
-    // Ilovaga qaytganda (Home ochiq va o'yin faol bo'lsa) holat serverdan yangilanadi
+    // Fonda long-poll / soat to'xtaydi (o'yin soati serverda davom etadi); qaytganda holat DARHOL serverdan olinadi
     document.addEventListener('visibilitychange', () => {
-      if (document.hidden) { // fonda polling to'xtaydi (o'yin soati serverda davom etadi)
-        clearTimeout(S.gTimer);
+      if (document.hidden) {
+        S.wId += 1;
         clearTimeout(S.qTimer);
         stopTick();
         return;
       }
-      if (S.searching && !S.cancelling) { pollQueue().catch(() => {}); return; } // qaytganda darhol davom etadi
-      if (S.panel === 'game' && isOnlineActive()) { ensureTick(); pollGame().catch(() => {}); return; }
-      if (A.state.view === 'home' && S.panel === 'game' && S.game && S.game.status === 'ACTIVE' && !S.busy) reloadGame().catch(() => {});
+      if (S.searching && !S.cancelling) { pollQueue().catch(() => {}); return; }
+      if (S.panel === 'game' && S.game && S.game.status === 'ACTIVE') {
+        if (S.game.mode === 'ONLINE') ensureTick();
+        if (S.out) { flushMove().catch(() => {}); return; }
+        if (!S.busy) reloadGame().catch(() => {}); // applyGame ichida long-poll qayta boshlanadi
+      }
+    });
+    // Internet qaytdi: yuborilmagan yurish bo'lsa yuboriladi, bo'lmasa holat yangilanadi
+    window.addEventListener('online', () => {
+      if (document.hidden || S.panel !== 'game' || !S.game || S.game.status !== 'ACTIVE') return;
+      if (S.out) flushMove().catch(() => {});
+      else if (!S.busy) reloadGame().catch(() => {});
     });
 
     window.AdRushChess = { onShow };

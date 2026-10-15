@@ -67,6 +67,22 @@ const getGame = asyncHandler(async (req, res) => {
   send(res, await chessGame.getGame(req.auth.user, id));
 });
 
+const waitSchema = z
+  .object({
+    since: z.coerce.number().int().min(0).max(2000),
+    st: z.enum(['ACTIVE', 'FINISHED']).default('ACTIVE'),
+    ms: z.coerce.number().int().min(1000).max(20000).default(20000),
+  })
+  .strict();
+
+/** GET /api/chess/games/:id/wait?since=<moveCount>&st=<status>&ms=<kutish> — long-poll: o'zgarish bo'lishi bilan qaytadi */
+const wait = asyncHandler(async (req, res) => {
+  const id = idSchema.parse(req.params.id);
+  const q = waitSchema.parse(req.query);
+  req.setTimeout(30_000);
+  send(res, await chessGame.waitGame(req.auth.user, id, q.since, q.st, q.ms));
+});
+
 /** POST /api/chess/games/:id/move { from, to, promotion?, expectedMoveCount } */
 const move = asyncHandler(async (req, res) => {
   const id = idSchema.parse(req.params.id);
@@ -102,4 +118,4 @@ const leaveQueue = asyncHandler(async (req, res) => {
   send(res, await chessMatch.leaveQueue(req.auth.user));
 });
 
-module.exports = { startBot, current, getGame, move, resign, stats, joinQueue, queueStatus, leaveQueue };
+module.exports = { startBot, current, getGame, wait, move, resign, stats, joinQueue, queueStatus, leaveQueue };

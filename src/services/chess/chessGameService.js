@@ -24,6 +24,31 @@ const { displayName } = require('../../utils/format');
 
 const inflight = new Map(); // bir xil (o'yin, yurish raqami) uchun bot ikki marta hisoblamasin
 
+/**
+ * O'yin o'zgarishlari xabarchisi: yurish / tugash COMMIT bo'lgandan keyin notify(gameId) chaqiriladi va shu o'yinni
+ * kutayotgan (long-poll) so'rovlar DARHOL uyg'onadi — raqib yurishi polling kutmasdan, ~100 ms ichida ko'rinadi.
+ * Bir nechta instansiya bo'lsa — kutuvchi so'rov baribir har WAIT_DB_CHECK_MS da DB'ni tekshiradi (zaxira).
+ */
+const waiters = new Map(); // gameId -> Set<() => void>
+function notify(gameId) {
+  const set = waiters.get(gameId);
+  if (!set) return;
+  for (const fn of [...set]) fn();
+}
+function addWaiter(gameId, fn) {
+  let set = waiters.get(gameId);
+  if (!set) { set = new Set(); waiters.set(gameId, set); }
+  set.add(fn);
+  return () => {
+    set.delete(fn);
+    if (!set.size) waiters.delete(gameId);
+  };
+}
+const WAIT_MAX_MS = 20_000; // bitta long-poll so'rovi ko'pi bilan shuncha kutadi (reverse proxy 60 s dan kam)
+const WAIT_DB_CHECK_MS = 1_500;
+
+const oppCache = new Map(); // userId -> { name, exp } (raqib ismi o'yin davomida o'zgarmaydi)
+
 function lockRow(tx, id) {
   return tx.$queryRaw`SELECT "id" FROM "ChessGame" WHERE "id" = ${id}::uuid FOR UPDATE`;
 }
@@ -100,9 +125,16 @@ function limitOf(game, yourColor, yourDelta) {
 /** Onlayn raqib: faqat ism / username (escape qilingan), boshqa shaxsiy ma'lumot yo'q. */
 async function opponentOf(game, userId) {
   const oppId = game.whiteUserId === userId ? game.blackUserId : game.whiteUserId;
+  const hit = oppId == null ? null : oppCache.get(oppId);
+  if (hit && hit.exp > Date.now()) return { type: 'USER', name: hit.name };
   const u = oppId == null ? null : await prisma.user.findUnique({ where: { id: oppId }, select: { username: true, firstName: true } });
   const cut = (v) => (v ? String(v).slice(0, 32) : v);
-  return { type: 'USER', name: displayName({ username: cut(u && u.username), firstName: cut(u && u.firstName) }) };
+  const name = displayName({ username: cut(u && u.username), firstName: cut(u && u.firstName) });
+  if (oppId != null) {
+    if (oppCache.size > 500) oppCache.delete(oppCache.keys().next().value);
+    oppCache.set(oppId, { name, exp: Date.now() + 10 * 60_000 });
+  }
+  return { type: 'USER', name };
 }
 
 /** O'yinning klientga ketadigan ko'rinishi. legalMoves faqat faol o'yinda va sening navbating bo'lsagina to'ldiriladi. */
@@ -193,7 +225,7 @@ async function expireIfFlagged(gameId) {
       if (!flag) return false;
       await finishByTimeout(tx, game, flag);
       return true;
-    }, TX_OPTS);
+    }, TX_OPTS).then((done) => { if (done) notify(gameId); return done; });
   } catch (err) {
     logger.error({ err, gameId }, 'Onlayn o\'yin vaqtini tugatishda xato');
     return false;
@@ -231,6 +263,7 @@ function botReply(gameId, expectedCount) {
         }
         await persistMove(tx, fresh, next);
       }, TX_OPTS);
+      notify(gameId); // commit'dan keyin: kutayotgan klient bot yurishini darrov oladi
     } catch (err) {
       logger.error({ err, gameId }, 'Bot yurishini yozishda xato');
     }
@@ -296,8 +329,9 @@ async function startBotGame(user, { level, color }) {
     throw err;
   }
 
-  let game = created;
-  if (isBotTurn(game)) game = await healBotTurn(game); // foydalanuvchi qora bo'lsa bot birinchi yuradi
+  const game = created;
+  // Foydalanuvchi qora bo'lsa bot birinchi yuradi: javobni KUTMAYMIZ (klient /wait orqali oladi) — o'yin ochilishi tezlashadi
+  if (isBotTurn(game)) botReply(game.id, game.moveCount).catch(() => {});
   return { success: true, game: await toView(game, user.id) };
 }
 
@@ -351,7 +385,10 @@ async function makeMove(user, gameId, { from, to, promotion, expectedMoveCount }
     throw err;
   }
 
-  if (!outcome.over && outcome.mode === 'BOT') await botReply(gameId, outcome.moveCount);
+  notify(gameId); // raqib (onlayn) shu zahoti yangilanishni oladi
+  // Bot javobi fonda hisoblanadi — foydalanuvchining yurishi DARHOL tasdiqlanadi (sekin internetda ham bot hisobini kutib o'tirmaydi).
+  // Natija klientga /wait (long-poll) orqali keladi; server qayta ishga tushsa ham getGame/maintenance tiklaydi.
+  if (!outcome.over && outcome.mode === 'BOT') botReply(gameId, outcome.moveCount).catch(() => {});
   const game = await prisma.chessGame.findUnique({ where: { id: gameId } });
   return { success: true, game: await toView(game, user.id) };
 }
@@ -389,8 +426,64 @@ async function resign(user, gameId) {
     if (err instanceof TxAbort) return err.result;
     throw err;
   }
+  notify(gameId);
   const game = await prisma.chessGame.findUnique({ where: { id: gameId } });
   return { success: true, game: await toView(game, user.id) };
+}
+
+/**
+ * Long-poll: klient bilgan moveCount (since) / status dan keyin o'yin o'zgarsa DARHOL, aks holda ko'pi bilan ~20 s dan keyin qaytadi.
+ *  - O'zgarish bo'lsa: { success, changed:true, game } (to'liq ko'rinish); bo'lmasa { success, changed:false, moveCount, turn, whiteTimeMs, blackTimeMs } (kichik javob).
+ *  - Botning navbatida qolgan bo'lsa bot yurishi shu yerda ishga tushiriladi (botReply parallel chaqiruvlarni birlashtiradi).
+ *  - Onlayn o'yinda vaqt tugashi ham kutish paytida aniqlanadi (soat tugagan zahoti natija).
+ * since — klientda ko'rsatilgan moveCount, st — klientdagi status ('ACTIVE' | 'FINISHED').
+ */
+async function waitGame(user, gameId, since, st = 'ACTIVE', maxMs = WAIT_MAX_MS) {
+  const t0 = Date.now();
+  const deadline = t0 + Math.min(maxMs, WAIT_MAX_MS);
+  let game = await prisma.chessGame.findUnique({ where: { id: gameId } });
+  if (!game || !colorOf(game, user.id)) return fail('GAME_NOT_FOUND');
+
+  const changed = (g) => g.moveCount !== since || g.status !== st;
+  if (!changed(game) && isBotTurn(game)) botReply(game.id, game.moveCount).catch(() => {}); // qotib qolgan bot yurishi
+
+  let wake = null;
+  let timer = null;
+  const off = addWaiter(gameId, () => { if (wake) wake(); });
+  try {
+    for (;;) {
+      if (changed(game)) break;
+      if (isOnline(game) && flaggedColor(game, Date.now())) { // vaqt tugadi: shu zahoti yakunlanadi
+        await expireIfFlagged(gameId);
+        game = (await prisma.chessGame.findUnique({ where: { id: gameId } })) || game;
+        if (changed(game)) break;
+      }
+      const left = deadline - Date.now();
+      if (left <= 0) break;
+      let ms = Math.min(left, WAIT_DB_CHECK_MS);
+      if (isOnline(game) && game.status === 'ACTIVE') { // soat tugash vaqtini o'tkazib yubormaslik
+        const c = clockOf(game, Date.now());
+        const mine = engine.turnFromCount(game.moveCount) === 'w' ? c.whiteMs : c.blackMs;
+        ms = Math.max(50, Math.min(ms, mine + 30));
+      }
+      await new Promise((resolve) => {
+        wake = resolve;
+        timer = setTimeout(resolve, ms);
+      });
+      clearTimeout(timer);
+      wake = null;
+      const fresh = await prisma.chessGame.findUnique({ where: { id: gameId } });
+      if (!fresh) return fail('GAME_NOT_FOUND');
+      game = fresh;
+    }
+  } finally {
+    clearTimeout(timer);
+    off();
+  }
+
+  if (changed(game)) return { success: true, changed: true, game: await toView(game, user.id) };
+  const c = clockOf(game, Date.now());
+  return { success: true, changed: false, moveCount: game.moveCount, turn: engine.turnFromCount(game.moveCount), whiteTimeMs: c.whiteMs, blackTimeMs: c.blackMs };
 }
 
 /** G'alaba / mag'lubiyat / durang soni — tugagan o'yinlardan hisoblanadi (alohida hisoblagich maydonlari yo'q). */
@@ -473,4 +566,4 @@ async function finishTimedOutOnlineGames() {
   return finished;
 }
 
-module.exports = { startBotGame, getCurrent, getGame, makeMove, resign, getStats, finishIdleBotGames, finishTimedOutOnlineGames };
+module.exports = { startBotGame, getCurrent, getGame, waitGame, makeMove, resign, getStats, finishIdleBotGames, finishTimedOutOnlineGames };
