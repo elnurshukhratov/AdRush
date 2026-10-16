@@ -7,14 +7,19 @@ const chessMatch = require('../../services/chess/chessMatchService');
 
 const SQUARE = z.string().regex(/^[a-h][1-8]$/);
 
+// Berilmasa har doim shahmat (eski mijozlar buzilmasin). Servislar katta harfli 'CHESS' | 'CHECKERS' kutadi.
+const GAME_TYPE = z.enum(['chess', 'checkers']).default('chess');
+const toGameType = (v) => (v === 'checkers' ? 'CHECKERS' : 'CHESS');
+
 const startSchema = z
   .object({
     level: z.number().int().min(1).max(3),
     color: z.enum(['white', 'black', 'random']).default('random'),
+    gameType: GAME_TYPE,
   })
   .strict();
 
-const moveSchema = z
+const chessMoveSchema = z
   .object({
     from: SQUARE,
     to: SQUARE,
@@ -22,6 +27,19 @@ const moveSchema = z
     expectedMoveCount: z.number().int().min(0).max(2000),
   })
   .strict();
+
+const checkersMoveSchema = z
+  .object({
+    path: z.array(SQUARE).min(2).max(20),
+    expectedMoveCount: z.number().int().min(0).max(2000),
+  })
+  .strict();
+
+// ikki shaklning birlashmasi; kirish shakli o'yin turiga mosligini servis (makeMove) tekshiradi
+const moveSchema = z.union([chessMoveSchema, checkersMoveSchema]);
+
+const queueSchema = z.object({ gameType: GAME_TYPE }).strict();
+const statsQuerySchema = z.object({ game: GAME_TYPE }).strict();
 
 const emptySchema = z.object({}).strict();
 const idSchema = z.string().uuid();
@@ -34,6 +52,7 @@ const FAIL = Object.freeze({
   NOT_YOUR_TURN: [409, 'Hozir sizning navbatingiz emas'],
   NOT_SUPPORTED: [409, 'Bu amal bu o\'yin turida mavjud emas'],
   ILLEGAL_MOVE: [422, 'Bunday yurish mumkin emas'],
+  MUST_CAPTURE: [422, 'Urish majburiy'],
   PROMOTION_REQUIRED: [422, 'Piyoda uchun figura tanlang'],
   BAD_PROMOTION: [400, 'Figura tanlovi noto\'g\'ri'],
   BAD_MOVE: [400, 'Yurish noto\'g\'ri'],
@@ -50,10 +69,10 @@ function send(res, result) {
   return res.json(result);
 }
 
-/** POST /api/chess/bot/start { level: 1..3, color?: 'white'|'black'|'random' } */
+/** POST /api/chess/bot/start { level: 1..3, color?: 'white'|'black'|'random', gameType?: 'chess'|'checkers' } */
 const startBot = asyncHandler(async (req, res) => {
   const body = startSchema.parse(req.body);
-  send(res, await chessGame.startBotGame(req.auth.user, body));
+  send(res, await chessGame.startBotGame(req.auth.user, { ...body, gameType: toGameType(body.gameType) }));
 });
 
 /** GET /api/chess/games/current — faol o'yin yoki { game: null } */
@@ -83,7 +102,7 @@ const wait = asyncHandler(async (req, res) => {
   send(res, await chessGame.waitGame(req.auth.user, id, q.since, q.st, q.ms));
 });
 
-/** POST /api/chess/games/:id/move { from, to, promotion?, expectedMoveCount } */
+/** POST /api/chess/games/:id/move — shahmat { from, to, promotion?, expectedMoveCount } | shashka { path: [...kataklar], expectedMoveCount } */
 const move = asyncHandler(async (req, res) => {
   const id = idSchema.parse(req.params.id);
   const body = moveSchema.parse(req.body);
@@ -97,15 +116,16 @@ const resign = asyncHandler(async (req, res) => {
   send(res, await chessGame.resign(req.auth.user, id));
 });
 
-/** GET /api/chess/stats — { wins, losses, draws, diamonds } */
+/** GET /api/chess/stats?game=chess|checkers — { wins, losses, draws, diamonds } (g'alaba/mag'lubiyat/durang shu tur bo'yicha) */
 const stats = asyncHandler(async (req, res) => {
-  send(res, await chessGame.getStats(req.auth.user));
+  const q = statsQuerySchema.parse(req.query);
+  send(res, await chessGame.getStats(req.auth.user, toGameType(q.game)));
 });
 
-/** POST /api/chess/online/queue — navbatga qo'shilish; { status: 'searching' | 'matched', gameId? } */
+/** POST /api/chess/online/queue { gameType?: 'chess'|'checkers' } — navbatga qo'shilish; { status: 'searching' | 'matched', gameId? } */
 const joinQueue = asyncHandler(async (req, res) => {
-  emptySchema.parse(req.body || {});
-  send(res, await chessMatch.joinQueue(req.auth.user));
+  const body = queueSchema.parse(req.body || {});
+  send(res, await chessMatch.joinQueue(req.auth.user, toGameType(body.gameType)));
 });
 
 /** GET /api/chess/online/queue — holat (polling); status: 'searching' | 'matched' (+gameId) | 'idle' (navbatda emas) */

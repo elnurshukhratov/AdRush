@@ -42,8 +42,10 @@ async function lockPlayers(tx, game) {
  */
 async function applyChessDelta(tx, game, userId, wanted) {
   if (!wanted) return 0;
-  const key = `chess:${game.id}:${userId}`;
-  const base = { userId, idempotencyKey: key, refType: 'CHESS', refId: game.id, currency: CURRENCY.DIAMOND };
+  // CHESS uchun kalit va refType eskisi bilan AYNAN bir xil; shashka uchun alohida ('checkers:...' / 'CHECKERS')
+  const checkers = game.gameType === 'CHECKERS';
+  const key = `${checkers ? 'checkers' : 'chess'}:${game.id}:${userId}`;
+  const base = { userId, idempotencyKey: key, refType: checkers ? 'CHECKERS' : 'CHESS', refId: game.id, currency: CURRENCY.DIAMOND };
 
   if (wanted > 0) {
     const r = await applyCoins(tx, { ...base, amount: wanted, type: COIN_TX.CHESS_WIN });
@@ -72,6 +74,8 @@ async function applyChessDelta(tx, game, userId, wanted) {
  *    to'lmagan bo'lsa; aks holda 0. Mag'lubiyat (mat, taslim, harakatsizlik) har doim -CHESS_LOSS_DIAMONDS (yetganicha). Durang 0.
  *  - Onlayn: ikkala tomon ham yetarli yurish qilmagan bo'lsa — hech kimga berilmaydi, hech kimdan ayirilmaydi. Juftlik 24 soatlik limiti
  *    to'lgan bo'lsa ham shunday. Aks holda g'olibga +, yutqazganga - (g'olib yetarli yurish qilmagan bo'lsa g'olibga berilmaydi).
+ *
+ * Kunlik bot limiti va juftlik limiti so'rovlari gameType bo'yicha FILTRLANMAYDI — shahmat va shashka uchun UMUMIY hisoblanadi.
  *
  * Qaytadi: { settled, whiteDelta, blackDelta, rewardGranted, limit } — limit: null | 'MIN_MOVES' | 'BOT_DAILY_LIMIT' | 'PAIR_LIMIT'
  * (limit faqat shu chaqiruvda hisoblanadi; qayta chaqirilganda null).

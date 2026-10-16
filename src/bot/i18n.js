@@ -19,9 +19,9 @@ const STRINGS = {
   uz: {
     pick_language: '🌐 Tilni tanlang / Choose language / Выберите язык',
     welcome: [
-      '♟ <b>AdRush Shahmat</b>',
+      '♟ <b>AdRush Shahmat</b> · ⚪ <b>Shashka</b>',
       '',
-      'Shahmat o\'ynang — bot bilan yoki boshqa o\'yinchilar bilan onlayn.',
+      'Shahmat yoki shashka o\'ynang — bot bilan yoki boshqa o\'yinchilar bilan onlayn.',
       '',
       '🤖 Bot bilan: Oson, O\'rta yoki Qiyin daraja',
       '🌐 Onlayn: haqiqiy raqib bilan soat bo\'yicha o\'yin',
@@ -45,9 +45,9 @@ const STRINGS = {
   en: {
     pick_language: '🌐 Tilni tanlang / Choose language / Выберите язык',
     welcome: [
-      '♟ <b>AdRush Chess</b>',
+      '♟ <b>AdRush Chess</b> · ⚪ <b>Checkers</b>',
       '',
-      'Play chess — against the bot or online against other players.',
+      'Play chess or checkers — against the bot or online against other players.',
       '',
       '🤖 Vs bot: Easy, Medium or Hard',
       '🌐 Online: timed games against real opponents',
@@ -71,9 +71,9 @@ const STRINGS = {
   ru: {
     pick_language: '🌐 Tilni tanlang / Choose language / Выберите язык',
     welcome: [
-      '♟ <b>AdRush Шахматы</b>',
+      '♟ <b>AdRush Шахматы</b> · ⚪ <b>Шашки</b>',
       '',
-      'Играйте в шахматы — с ботом или онлайн с другими игроками.',
+      'Играйте в шахматы или шашки — с ботом или онлайн с другими игроками.',
       '',
       '🤖 С ботом: лёгкий, средний или сложный уровень',
       '🌐 Онлайн: партия с часами против реального соперника',

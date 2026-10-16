@@ -5,7 +5,7 @@ const { prisma } = require('../../db/prisma');
 const config = require('../../config');
 const { lockUser } = require('../../utils/dbLock');
 const { TX_OPTS, TxAbort, fail } = require('../coins/coinService');
-const engine = require('./chessEngine');
+const { getEngine, normalizeGameType } = require('./gameEngines');
 
 /**
  * Onlayn navbat va juftlashtirish (polling asosida, yangi infratuzilmasiz).
@@ -14,7 +14,9 @@ const engine = require('./chessEngine');
  *    (kutmaymiz — ikki tomon bir vaqtda bir-birini juftlamoqchi bo'lsa deadlock bo'lmaydi, keyingi pollingda juftlashadi).
  *    Shu tufayli bir foydalanuvchi ikki o'yinga tushmaydi (bot o'yini / boshqa juftlik ham o'sha qulfni oladi) va o'zi bilan juftlashmaydi.
  *  - Vaqt solishtirish DB soatida (UTC); CHESS_QUEUE_STALE_SECONDS dan ko'p "ko'rinmagan" yozuvlar e'tiborga olinmaydi va o'chiriladi.
- * Natija: { success:true, status:'searching', waitedSec } | { status:'matched', gameId } | { status:'idle' }.
+ *  - Navbat o'yin turi (CHESS | CHECKERS) bo'yicha: faqat bir xil turdagi o'yinchilar juftlashadi. Foydalanuvchi navbatda faqat bittada turadi
+ *    (ChessQueue.userId unique): boshqa turga qo'shilmoqchi bo'lsa eski yozuv almashtiriladi (yangi turda navbat boshidan).
+ * Natija: { success:true, status:'searching', gameType, waitedSec } | { status:'matched', gameType, gameId } | { status:'idle' }.
  */
 
 const MAX_CANDIDATES = 5;
@@ -35,19 +37,20 @@ async function cleanupStale(tx, exceptUserId = 0) {
 function findActiveGame(tx, userId) {
   return tx.chessGame.findFirst({
     where: { status: 'ACTIVE', OR: [{ whiteUserId: userId }, { blackUserId: userId }] },
-    select: { id: true, mode: true },
+    select: { id: true, mode: true, gameType: true },
     orderBy: { createdAt: 'desc' },
   });
 }
 
-/** Raqib topilsa o'yin yaratadi (ranglar tasodifiy, soat serverda), aks holda null. Chaqiruvchi o'z qulflarini olgan bo'lishi shart. */
-async function tryMatch(tx, user, now) {
+/** Raqib topilsa (FAQAT shu turdagi navbatdan) o'yin yaratadi (ranglar tasodifiy, soat serverda), aks holda null. Chaqiruvchi o'z qulflarini olgan bo'lishi shart. */
+async function tryMatch(tx, user, gameType, now) {
   const sec = staleSec();
   const candidates = await tx.$queryRaw`
     SELECT q."userId" AS "userId", u."telegramId" AS "telegramId"
     FROM "ChessQueue" q
     JOIN "User" u ON u."id" = q."userId"
     WHERE q."userId" <> ${user.id}
+      AND q."gameType" = ${gameType}::"GameType"
       AND u."isBlocked" = false
       AND q."lastSeenAt" >= (NOW() AT TIME ZONE 'UTC') - make_interval(secs => ${sec}::int)
     ORDER BY q."joinedAt" ASC
@@ -69,10 +72,11 @@ async function tryMatch(tx, user, now) {
     const ms = config.chess.onlineTimeSeconds * 1000;
     return tx.chessGame.create({
       data: {
+        gameType,
         mode: 'ONLINE',
         whiteUserId: meWhite ? user.id : c.userId,
         blackUserId: meWhite ? c.userId : user.id,
-        fen: engine.START_FEN,
+        fen: getEngine(gameType).START_POSITION,
         moves: [],
         moveCount: 0,
         lastMoveAt: now,
@@ -88,16 +92,19 @@ async function tryMatch(tx, user, now) {
 /** join va status uchun umumiy qadam (foydalanuvchi qulfi olingan, o'z qatori mavjud). */
 async function searchStep(tx, user, now) {
   await cleanupStale(tx, user.id);
-  const own = await tx.$queryRaw`SELECT "id" FROM "ChessQueue" WHERE "userId" = ${user.id} FOR UPDATE`;
+  const own = await tx.$queryRaw`SELECT "id", "gameType"::text AS "gameType" FROM "ChessQueue" WHERE "userId" = ${user.id} FOR UPDATE`;
   if (!own.length) {
     // qatorimiz yo'q: raqib bizni allaqachon juftlagan bo'lishi mumkin
     const game = await findActiveGame(tx, user.id);
-    return game && game.mode === 'ONLINE' ? { success: true, status: 'matched', gameId: game.id } : { success: true, status: 'idle' };
+    return game && game.mode === 'ONLINE'
+      ? { success: true, status: 'matched', gameType: normalizeGameType(game.gameType), gameId: game.id }
+      : { success: true, status: 'idle' };
   }
-  const game = await tryMatch(tx, user, now);
-  if (game) return { success: true, status: 'matched', gameId: game.id };
+  const gameType = normalizeGameType(own[0].gameType); // juftlash doim o'z navbat yozuvimizdagi tur bo'yicha (polling'da klient turni yubormaydi)
+  const game = await tryMatch(tx, user, gameType, now);
+  if (game) return { success: true, status: 'matched', gameType: normalizeGameType(game.gameType), gameId: game.id };
   const row = await tx.chessQueue.findUnique({ where: { userId: user.id } });
-  return { success: true, status: 'searching', waitedSec: Math.max(0, Math.floor((now - row.joinedAt) / 1000)) };
+  return { success: true, status: 'searching', gameType, waitedSec: Math.max(0, Math.floor((now - row.joinedAt) / 1000)) };
 }
 
 async function run(fn) {
@@ -109,20 +116,31 @@ async function run(fn) {
   }
 }
 
-/** POST /online/queue — navbatga qo'shilish (idempotent). Faol bot o'yini bo'lsa ALREADY_ACTIVE { gameId }. */
-function joinQueue(user) {
+/**
+ * POST /online/queue — navbatga qo'shilish (idempotent). gameType: 'CHESS' (standart) | 'CHECKERS'.
+ * Faol bot o'yini bo'lsa ALREADY_ACTIVE { gameId }. Boshqa turdagi navbatda turgan bo'lsa — eski yozuv shu tur bilan almashtiriladi.
+ */
+function joinQueue(user, gameType = 'CHESS') {
+  const type = normalizeGameType(gameType);
+  getEngine(type); // noma'lum tur bo'lsa aniq xato tashlaydi
   return run(async (tx) => {
     await lockUser(tx, user.telegramId);
     const active = await findActiveGame(tx, user.id);
-    if (active && active.mode === 'ONLINE') return { success: true, status: 'matched', gameId: active.id };
+    if (active && active.mode === 'ONLINE') return { success: true, status: 'matched', gameType: normalizeGameType(active.gameType), gameId: active.id };
     if (active) throw new TxAbort(fail('ALREADY_ACTIVE', { gameId: active.id }));
 
     const now = new Date();
-    await tx.chessQueue.upsert({
-      where: { userId: user.id },
-      create: { userId: user.id, joinedAt: now, lastSeenAt: now },
-      update: { lastSeenAt: now },
-    });
+    const existing = await tx.chessQueue.findUnique({ where: { userId: user.id }, select: { gameType: true } });
+    if (existing && normalizeGameType(existing.gameType) !== type) {
+      // boshqa turga o'tdi: eskisi almashtiriladi, yangi turda navbat boshidan (joinedAt yangilanadi)
+      await tx.chessQueue.update({ where: { userId: user.id }, data: { gameType: type, joinedAt: now, lastSeenAt: now } });
+    } else {
+      await tx.chessQueue.upsert({
+        where: { userId: user.id },
+        create: { userId: user.id, gameType: type, joinedAt: now, lastSeenAt: now },
+        update: { lastSeenAt: now },
+      });
+    }
     return searchStep(tx, user, now);
   });
 }
@@ -132,7 +150,7 @@ function getQueueStatus(user) {
   return run(async (tx) => {
     await lockUser(tx, user.telegramId);
     const active = await findActiveGame(tx, user.id);
-    if (active && active.mode === 'ONLINE') return { success: true, status: 'matched', gameId: active.id };
+    if (active && active.mode === 'ONLINE') return { success: true, status: 'matched', gameType: normalizeGameType(active.gameType), gameId: active.id };
     if (active) return { success: true, status: 'idle' }; // bot o'yini — navbatda emas
 
     const now = new Date();
@@ -148,7 +166,7 @@ function leaveQueue(user) {
     await lockUser(tx, user.telegramId);
     await tx.chessQueue.deleteMany({ where: { userId: user.id } });
     const active = await findActiveGame(tx, user.id);
-    if (active && active.mode === 'ONLINE') return { success: true, status: 'matched', gameId: active.id };
+    if (active && active.mode === 'ONLINE') return { success: true, status: 'matched', gameType: normalizeGameType(active.gameType), gameId: active.id };
     return { success: true, status: 'idle' };
   });
 }

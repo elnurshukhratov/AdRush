@@ -7,12 +7,12 @@ const logger = require('../../utils/logger');
 const { lockUser } = require('../../utils/dbLock');
 const { TX_OPTS, TxAbort, fail, getBalances } = require('../coins/coinService');
 const { settleGame, lockPlayers } = require('./chessRewardService');
-const engine = require('./chessEngine');
+const { getEngine, normalizeGameType } = require('./gameEngines');
 const bot = require('./chessBot');
 const { displayName } = require('../../utils/format');
 
 /**
- * Shahmat o'yin servisi (BOT va ONLINE rejimlar). Server — yagona haqiqat manbai: klient faqat from/to/promotion yuboradi.
+ * Shahmat va shashka o'yin servisi (BOT va ONLINE rejimlar). Server — yagona haqiqat manbai: klient shahmatda faqat from/to/promotion, shashkada faqat path yuboradi.
  *  - Har bir yozish tranzaksiyada: o'yinchi advisory-qulfi (lockPlayers) -> o'yin qatori FOR UPDATE; o'yin tugasa settleGame SHU tranzaksiyada.
  *  - Yurish `expectedMoveCount` bilan idempotent: bir yurish ikki marta qo'llanmaydi (mos kelmasa MOVE_CONFLICT).
  *  - Bot hisob-kitobi (3 s gacha) tranzaksiyadan TASHQARIDA (worker'da); natija yozilishida holat qayta tekshiriladi.
@@ -57,6 +57,16 @@ function movesOf(game) {
   return Array.isArray(game.moves) ? game.moves : [];
 }
 
+/** O'yin turiga mos dvigatel (eski o'yinlarda gameType yo'q bo'lsa — shahmat). */
+function engineOf(game) {
+  return getEngine(game.gameType);
+}
+
+/** Shashka o'yinimi (eski o'yinlarda gameType yo'q bo'lsa — shahmat). */
+function isCheckersGame(game) {
+  return normalizeGameType(game.gameType) === 'CHECKERS';
+}
+
 /** Foydalanuvchining rangi: 'w' | 'b' | null (ishtirokchi emas). */
 function colorOf(game, userId) {
   if (game.whiteUserId === userId) return 'w';
@@ -70,7 +80,7 @@ function botColorOf(game) {
 }
 
 function isBotTurn(game) {
-  return game.mode === 'BOT' && game.status === 'ACTIVE' && engine.turnFromCount(game.moveCount) === botColorOf(game);
+  return game.mode === 'BOT' && game.status === 'ACTIVE' && engineOf(game).turnFromCount(game.moveCount) === botColorOf(game);
 }
 
 /** Onlayn o'yin ekanligi. */
@@ -85,7 +95,7 @@ function clockOf(game, nowMs) {
   const b = game.blackTimeMs ?? 0;
   if (game.status !== 'ACTIVE') return { whiteMs: w, blackMs: b };
   const elapsed = Math.max(0, nowMs - game.lastMoveAt.getTime());
-  return engine.turnFromCount(game.moveCount) === 'w'
+  return engineOf(game).turnFromCount(game.moveCount) === 'w'
     ? { whiteMs: Math.max(0, w - elapsed), blackMs: b }
     : { whiteMs: w, blackMs: Math.max(0, b - elapsed) };
 }
@@ -94,7 +104,7 @@ function clockOf(game, nowMs) {
 function flaggedColor(game, nowMs) {
   if (!isOnline(game) || game.status !== 'ACTIVE') return null;
   const c = clockOf(game, nowMs);
-  const turn = engine.turnFromCount(game.moveCount);
+  const turn = engineOf(game).turnFromCount(game.moveCount);
   return (turn === 'w' ? c.whiteMs : c.blackMs) <= 0 ? turn : null;
 }
 
@@ -140,9 +150,9 @@ async function opponentOf(game, userId) {
 /** O'yinning klientga ketadigan ko'rinishi. legalMoves faqat faol o'yinda va sening navbating bo'lsagina to'ldiriladi. */
 async function toView(game, userId) {
   const moves = movesOf(game);
-  const chess = engine.fromMoves(moves);
-  const history = chess.history({ verbose: true });
-  const last = history.length ? history[history.length - 1] : null;
+  const eng = engineOf(game);
+  const checkers = isCheckersGame(game);
+  const state = eng.getState(moves);
   const yourColor = colorOf(game, userId);
   const active = game.status === 'ACTIVE';
   const yourDelta = active ? null : yourColor === 'w' ? game.whiteDelta : game.blackDelta;
@@ -154,16 +164,18 @@ async function toView(game, userId) {
 
   return {
     id: game.id,
+    gameType: normalizeGameType(game.gameType), // 'CHESS' | 'CHECKERS'
     mode: game.mode,
     status: game.status,
-    fen: game.fen,
+    fen: game.fen, // shashkada — pozitsiya matni
     moves,
     moveCount: game.moveCount,
-    turn: chess.turn(), // 'w' | 'b'
+    turn: state.turn, // 'w' | 'b'
     yourColor, // 'w' | 'b'
-    inCheck: active && chess.inCheck(),
-    lastMove: last ? { from: last.from, to: last.to } : null,
-    legalMoves: active && chess.turn() === yourColor ? engine.legalMovesMap(chess) : {},
+    inCheck: active && !!state.inCheck,
+    lastMove: eng.lastMove(moves), // shahmatda { from, to }, shashkada { path }
+    // shahmatda { from: [to...] }, shashkada to'liq yo'llar ro'yxati [['c3','e5'], ...]
+    legalMoves: active && state.turn === yourColor ? state.legalMoves : checkers ? [] : {},
     whiteTimeMs: clock.whiteMs, // onlayn: serverning joriy hisobi; bot o'yinida null
     blackTimeMs: clock.blackMs,
     incrementMs: isOnline(game) ? game.incrementMs : 0,
@@ -171,6 +183,7 @@ async function toView(game, userId) {
     endReason: game.endReason,
     yourDelta,
     limit: limitOf(game, yourColor, yourDelta),
+    ...(checkers ? { mustCapture: active && state.turn === yourColor && !!state.mustCapture } : {}),
     opponent, // { type:'BOT', level } | { type:'USER', name }
     diamonds: balances.diamonds,
   };
@@ -181,14 +194,14 @@ async function persistMove(tx, game, next, now = new Date()) {
   const over = next.state.over;
   const data = {
     moves: next.moves,
-    fen: next.state.fen,
+    fen: next.state.position,
     moveCount: game.moveCount + 1,
     lastMoveAt: now,
     ...(over ? { status: 'FINISHED', result: next.state.result, endReason: next.state.endReason } : {}),
   };
   if (isOnline(game)) {
     const c = clockOf(game, now.getTime());
-    if (engine.turnFromCount(game.moveCount) === 'w') data.whiteTimeMs = c.whiteMs + game.incrementMs;
+    if (engineOf(game).turnFromCount(game.moveCount) === 'w') data.whiteTimeMs = c.whiteMs + game.incrementMs;
     else data.blackTimeMs = c.blackMs + game.incrementMs;
   }
   const updated = await tx.chessGame.update({ where: { id: game.id }, data });
@@ -198,7 +211,8 @@ async function persistMove(tx, game, next, now = new Date()) {
 
 /** Vaqti tugagan tomon yutqazadi (TIMEOUT). Qolgan material mat qilishga yetmasa — durang. settleGame shu tranzaksiyada. */
 async function finishByTimeout(tx, game, loserColor) {
-  const draw = engine.fromMoves(movesOf(game)).isInsufficientMaterial();
+  const eng = engineOf(game);
+  const draw = typeof eng.isInsufficientMaterial === 'function' ? eng.isInsufficientMaterial(movesOf(game)) : false;
   const updated = await tx.chessGame.update({
     where: { id: game.id },
     data: {
@@ -243,9 +257,11 @@ function botReply(gameId, expectedCount) {
     const game = await prisma.chessGame.findUnique({ where: { id: gameId } });
     if (!game || game.moveCount !== expectedCount || !isBotTurn(game)) return;
 
-    let move = await bot.chooseMove(game.fen, game.botLevel || 2); // tranzaksiyadan tashqarida (3 s gacha)
+    const type = normalizeGameType(game.gameType);
+    let move = await bot.chooseMove(game.fen, game.botLevel || 2, type); // tranzaksiyadan tashqarida (3 s gacha)
     if (!move) return;
     const moves = movesOf(game);
+    const eng = engineOf(game);
 
     try {
       await prisma.$transaction(async (tx) => {
@@ -254,11 +270,11 @@ function botReply(gameId, expectedCount) {
         const fresh = await tx.chessGame.findUnique({ where: { id: gameId } });
         if (!fresh || fresh.moveCount !== expectedCount || !isBotTurn(fresh)) return; // bu orada o'zgargan (taslim va h.k.)
 
-        let next = engine.applyMove(moves, move);
+        let next = eng.applyMove(moves, move);
         if (!next.ok) {
-          logger.warn({ gameId, move, reason: next.reason }, 'Shahmat boti noqonuniy yurish qaytardi, zaxira ishlatildi');
-          move = engine.randomMoveFromFen(fresh.fen);
-          next = move ? engine.applyMove(moves, move) : next;
+          logger.warn({ gameId, move, reason: next.reason }, `${type === 'CHECKERS' ? 'Shashka' : 'Shahmat'} boti noqonuniy yurish qaytardi, zaxira ishlatildi`);
+          move = eng.randomMove(fresh.fen);
+          next = move ? eng.applyMove(moves, move) : next;
           if (!next.ok) return;
         }
         await persistMove(tx, fresh, next);
@@ -296,8 +312,10 @@ async function findActive(userId) {
   });
 }
 
-/** Bot bilan o'yin boshlash. color: 'white' | 'black' | 'random'. Faol o'yin bo'lsa ALREADY_ACTIVE { gameId }. */
-async function startBotGame(user, { level, color }) {
+/** Bot bilan o'yin boshlash. color: 'white' | 'black' | 'random'; gameType: 'CHESS' (standart) | 'CHECKERS'. Faol o'yin bo'lsa ALREADY_ACTIVE { gameId }. */
+async function startBotGame(user, { level, color, gameType = 'CHESS' }) {
+  const type = normalizeGameType(gameType);
+  const startPosition = getEngine(type).START_POSITION; // noma'lum tur bo'lsa aniq xato tashlaydi
   let created;
   try {
     created = await prisma.$transaction(async (tx) => {
@@ -314,11 +332,12 @@ async function startBotGame(user, { level, color }) {
       const userColor = color === 'white' ? 'w' : color === 'black' ? 'b' : randomInt(2) === 0 ? 'w' : 'b';
       return tx.chessGame.create({
         data: {
+          gameType: type,
           mode: 'BOT',
           whiteUserId: userColor === 'w' ? user.id : null,
           blackUserId: userColor === 'b' ? user.id : null,
           botLevel: level,
-          fen: engine.START_FEN,
+          fen: startPosition,
           moves: [],
           moveCount: 0,
         },
@@ -351,8 +370,11 @@ async function getGame(user, gameId) {
   return { success: true, game: await toView(game, user.id) };
 }
 
-/** Yurish: { from, to, promotion?, expectedMoveCount }. Natijada bot javobi ham (bo'lsa) hisobga olingan holat qaytadi. */
-async function makeMove(user, gameId, { from, to, promotion, expectedMoveCount }) {
+/**
+ * Yurish: shahmat { from, to, promotion?, expectedMoveCount } YOKI shashka { path, expectedMoveCount }.
+ * Kirish shakli o'yin turiga mos bo'lmasa BAD_MOVE. Natijada bot javobi ham (bo'lsa) hisobga olingan holat qaytadi.
+ */
+async function makeMove(user, gameId, { from, to, promotion, path, expectedMoveCount }) {
   let outcome;
   try {
     outcome = await prisma.$transaction(async (tx) => {
@@ -372,9 +394,15 @@ async function makeMove(user, gameId, { from, to, promotion, expectedMoveCount }
         await finishByTimeout(tx, game, flag);
         return { over: true, moveCount: game.moveCount, mode: game.mode };
       }
-      if (engine.turnFromCount(game.moveCount) !== colorOf(game, user.id)) throw new TxAbort(fail('NOT_YOUR_TURN'));
+      const eng = engineOf(game);
+      // kirish shakli o'yin turiga mos bo'lsin: shashkada faqat path, shahmatda faqat from/to/promotion
+      const checkers = isCheckersGame(game);
+      const hasPath = path !== undefined;
+      const hasSquares = from !== undefined || to !== undefined || promotion !== undefined;
+      if (checkers ? !hasPath || hasSquares : hasPath || from === undefined || to === undefined) throw new TxAbort(fail('BAD_MOVE'));
+      if (eng.turnFromCount(game.moveCount) !== colorOf(game, user.id)) throw new TxAbort(fail('NOT_YOUR_TURN'));
 
-      const next = engine.applyMove(movesOf(game), { from, to, promotion });
+      const next = eng.applyMove(movesOf(game), checkers ? { path } : { from, to, promotion });
       if (!next.ok) throw new TxAbort(fail(next.reason));
 
       const updated = await persistMove(tx, game, next, now);
@@ -463,7 +491,7 @@ async function waitGame(user, gameId, since, st = 'ACTIVE', maxMs = WAIT_MAX_MS)
       let ms = Math.min(left, WAIT_DB_CHECK_MS);
       if (isOnline(game) && game.status === 'ACTIVE') { // soat tugash vaqtini o'tkazib yubormaslik
         const c = clockOf(game, Date.now());
-        const mine = engine.turnFromCount(game.moveCount) === 'w' ? c.whiteMs : c.blackMs;
+        const mine = engineOf(game).turnFromCount(game.moveCount) === 'w' ? c.whiteMs : c.blackMs;
         ms = Math.max(50, Math.min(ms, mine + 30));
       }
       await new Promise((resolve) => {
@@ -483,13 +511,16 @@ async function waitGame(user, gameId, since, st = 'ACTIVE', maxMs = WAIT_MAX_MS)
 
   if (changed(game)) return { success: true, changed: true, game: await toView(game, user.id) };
   const c = clockOf(game, Date.now());
-  return { success: true, changed: false, moveCount: game.moveCount, turn: engine.turnFromCount(game.moveCount), whiteTimeMs: c.whiteMs, blackTimeMs: c.blackMs };
+  return { success: true, changed: false, moveCount: game.moveCount, turn: engineOf(game).turnFromCount(game.moveCount), whiteTimeMs: c.whiteMs, blackTimeMs: c.blackMs };
 }
 
-/** G'alaba / mag'lubiyat / durang soni — tugagan o'yinlardan hisoblanadi (alohida hisoblagich maydonlari yo'q). */
-async function getStats(user) {
+/**
+ * G'alaba / mag'lubiyat / durang soni — SHU turdagi (gameType: 'CHESS' standart | 'CHECKERS') tugagan o'yinlardan hisoblanadi
+ * (alohida hisoblagich maydonlari yo'q). Olmos balansi umumiy. Eski o'yinlar DB'da CHESS bo'lib qolgan.
+ */
+async function getStats(user, gameType = 'CHESS') {
   const uid = user.id;
-  const finished = { status: 'FINISHED' };
+  const finished = { status: 'FINISHED', gameType: normalizeGameType(gameType) };
   const [wins, losses, draws, balances] = await Promise.all([
     prisma.chessGame.count({
       where: { ...finished, OR: [{ whiteUserId: uid, result: 'WHITE' }, { blackUserId: uid, result: 'BLACK' }] },

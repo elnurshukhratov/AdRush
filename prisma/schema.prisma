@@ -31,7 +31,7 @@ enum CoinCurrency {
 //  WALLET_TOPUP (+so'm) — Telegram to'lovi orqali so'm balansni to'ldirish,
 //  COIN_BUY_OUT (-so'm) / COIN_BUY_IN (+Rush) — so'm hisobidan Rush Coin sotib olish (refType='COIN_BUY', bir xil refId),
 //  ADMIN_GRANT (+Rush) — admin paneldan qo'lda yuborilgan tanga (refType='ADMIN_GRANT', refId = yuborish UUID'si; kim yuborgani AuditLog da),
-//  CHESS_WIN (+olmos) / CHESS_LOSS (-olmos) — shahmat o'yini natijasi (refType='CHESS', refId = ChessGame.id).
+//  CHESS_WIN (+olmos) / CHESS_LOSS (-olmos) — shahmat va shashka o'yini natijasi (refType='CHESS' yoki 'CHECKERS', refId = ChessGame.id).
 // COMPETITION_BET, LOSS_REFUND, COMPETITION_WIN — eski yozuvlar uchun saqlangan (bazada qoladi, ilova ko'rsatmaydi).
 enum CoinTxType {
   ADS_REWARD
@@ -52,6 +52,12 @@ enum CoinTxType {
   ADMIN_GRANT
   CHESS_WIN
   CHESS_LOSS
+}
+
+// O'yin turi: CHESS = shahmat, CHECKERS = shashka (rus shashkasi). Eski yozuvlar avtomatik CHESS.
+enum GameType {
+  CHESS
+  CHECKERS
 }
 
 // Shahmat: o'yin turi (BOT = kompyuterga qarshi, ONLINE = haqiqiy foydalanuvchi bilan)
@@ -80,6 +86,7 @@ enum ChessEnd {
   RESIGN
   TIMEOUT // onlayn soat tugadi
   ABANDON // bot o'yini harakatsiz qoldi
+  NO_MOVES // shashka: raqibning donalari qolmadi yoki yura olmaydi
 }
 
 // Telegram to'lovi holati: PENDING (invoice yaratildi) -> PAID (successful_payment keldi) | FAILED | CANCELLED
@@ -345,6 +352,7 @@ model RequiredChannel {
 // settledAt — hisob-kitob bajarilgan vaqt (NULL bo'lsa hali hisoblanmagan; ikkinchi marta hisoblanmaydi).
 model ChessGame {
   id           String      @id @default(uuid()) @db.Uuid
+  gameType     GameType    @default(CHESS)
   mode         ChessMode
   status       ChessStatus @default(ACTIVE)
   whiteUserId  Int?
@@ -382,6 +390,7 @@ model ChessGame {
 model ChessQueue {
   id         Int      @id @default(autoincrement())
   userId     Int      @unique
+  gameType   GameType @default(CHESS)
   joinedAt   DateTime @default(now())
   lastSeenAt DateTime @default(now())
 
@@ -389,4 +398,5 @@ model ChessQueue {
 
   @@index([joinedAt])
   @@index([lastSeenAt])
+  @@index([gameType, joinedAt])
 }

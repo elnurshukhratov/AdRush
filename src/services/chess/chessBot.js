@@ -4,12 +4,14 @@ const os = require('os');
 const path = require('path');
 const { Worker } = require('worker_threads');
 const { Chess } = require('chess.js');
+const checkersBot = require('./checkersBot');
 
 /**
  * Server tomonidagi shahmat boti (tashqi dvigatelsiz): alpha-beta (negamax) + baholash (material + figura-maydon jadvallari).
  * Qidiruv worker_threads'da (chooseMove) — event loop bloklanmaydi. Har yurish uchun qattiq vaqt chegarasi bor:
  * qidiruv o'zi iterativ chuqurlashtirish bilan vaqtni kuzatadi, worker javob bermasa pool uni to'xtatib, tasodifiy qonuniy yurish beradi.
  * Bu fayl worker ichida ham yuklanadi — shuning uchun config / prisma / logger bu yerda yuqorida ulanmaydi.
+ * Shashka boti (checkersBot.js) ham shu pool va shu vaqt chegarasi/zaxira yurish mexanizmi orqali ishlaydi: chooseMove(position, level, gameType).
  */
 
 // Darajalar: 1 Oson (chuqurlik 1 + ma'lum ehtimol bilan tasodifiy yurish), 2 O'rta (chuqurlik 2), 3 Qiyin (chuqurlik 3, tartiblash, vaqt chegarasi)
@@ -18,6 +20,16 @@ const LEVELS = Object.freeze({
   2: { depth: 2, randomP: 0, timeMs: 1800 },
   3: { depth: 3, randomP: 0, timeMs: 3000 },
 });
+
+/** 'CHECKERS' | 'checkers' -> true; boshqa hamma narsa (CHESS, null, eski o'yin) -> shahmat. */
+function isCheckers(gameType) {
+  return String(gameType || '').toUpperCase() === 'CHECKERS';
+}
+
+/** O'yin turiga mos daraja jadvali (timeMs pool'dagi qattiq chegara uchun kerak). */
+function levelsFor(gameType) {
+  return isCheckers(gameType) ? checkersBot.LEVELS : LEVELS;
+}
 
 const MATE = 100000;
 const VAL = { p: 100, n: 320, b: 330, r: 500, q: 900, k: 0 };
@@ -253,6 +265,15 @@ function searchBestMove(fen, level) {
   return toMove(best);
 }
 
+/**
+ * O'yin turiga qarab yo'naltiradi (worker shu funksiyani chaqiradi): shahmat -> { from, to, promotion? } (position = FEN),
+ * shashka -> { path: [...] } (position = pozitsiya matni). Yurish bo'lmasa null.
+ */
+function searchBest(position, level, gameType) {
+  if (isCheckers(gameType)) return checkersBot.searchBestMove(position, level);
+  return searchBestMove(position, level);
+}
+
 // ---------------------------------------------------------------------------------------------------------------------
 // Worker pool (faqat asosiy oqimda ishlatiladi)
 // ---------------------------------------------------------------------------------------------------------------------
@@ -276,9 +297,10 @@ function logWarn(obj, msg) {
   }
 }
 
-function fallbackMove(fen) {
+function fallbackMove(position, gameType) {
   try {
-    return require('./chessEngine').randomMoveFromFen(fen);
+    if (isCheckers(gameType)) return require('./checkersEngine').randomMove(position);
+    return require('./chessEngine').randomMoveFromFen(position);
   } catch (_e) {
     return null;
   }
@@ -289,8 +311,8 @@ function finish(slot, move, reason) {
   if (!job) return;
   clearTimeout(job.timer);
   slot.job = null;
-  if (reason) logWarn({ reason, level: job.level }, 'Shahmat boti: zaxira yurish ishlatildi');
-  job.resolve(move || fallbackMove(job.fen));
+  if (reason) logWarn({ reason, level: job.level, gameType: job.gameType }, `${isCheckers(job.gameType) ? 'Shashka' : 'Shahmat'} boti: zaxira yurish ishlatildi`);
+  job.resolve(move || fallbackMove(job.fen, job.gameType));
   pump();
 }
 
@@ -321,7 +343,7 @@ function pump() {
       try {
         spawnSlot(slot);
       } catch (err) {
-        job.resolve(fallbackMove(job.fen));
+        job.resolve(fallbackMove(job.fen, job.gameType));
         continue;
       }
     }
@@ -331,23 +353,25 @@ function pump() {
       slot.worker = null; // qotib qolgan worker'ni o'chirib, keyingi ishda yangisi ochiladi
       if (w) w.terminate().catch(() => {});
       finish(slot, null, 'vaqt chegarasi');
-    }, (LEVELS[job.level] || LEVELS[2]).timeMs + HARD_GRACE_MS);
-    slot.worker.postMessage({ id: job.id, fen: job.fen, level: job.level });
+    }, (levelsFor(job.gameType)[job.level] || levelsFor(job.gameType)[2]).timeMs + HARD_GRACE_MS);
+    slot.worker.postMessage({ id: job.id, fen: job.fen, level: job.level, gameType: job.gameType });
   }
 }
 
 /**
- * Bot yurishi (asinxron, worker'da). FEN va daraja (1–3) bo'yicha { from, to, promotion? } qaytaradi;
+ * Bot yurishi (asinxron, worker'da). Pozitsiya (shahmatda FEN, shashkada pozitsiya matni), daraja (1–3) va o'yin turi bo'yicha
+ * shahmatda { from, to, promotion? }, shashkada { path: [...] } qaytaradi (gameType berilmasa — shahmat);
  * qonuniy yurish yo'q bo'lsa null. Hech qachon osilib qolmaydi: vaqt/xatoda tasodifiy qonuniy yurish qaytadi.
  */
-function chooseMove(fen, level) {
-  const lv = LEVELS[level] ? level : 2;
-  if (closed) return Promise.resolve(fallbackMove(fen));
+function chooseMove(position, level, gameType = 'CHESS') {
+  const type = isCheckers(gameType) ? 'CHECKERS' : 'CHESS';
+  const lv = levelsFor(type)[level] ? level : 2;
+  if (closed) return Promise.resolve(fallbackMove(position, type));
   if (!slots.length) for (let i = 0; i < POOL_SIZE; i += 1) slots.push({ worker: null, job: null });
-  if (queue.length >= MAX_QUEUE) return Promise.resolve(fallbackMove(fen));
+  if (queue.length >= MAX_QUEUE) return Promise.resolve(fallbackMove(position, type));
   return new Promise((resolve) => {
     seq += 1;
-    queue.push({ id: seq, fen, level: lv, resolve, timer: null });
+    queue.push({ id: seq, fen: position, level: lv, gameType: type, resolve, timer: null });
     pump();
   });
 }
@@ -355,12 +379,12 @@ function chooseMove(fen, level) {
 /** Server to'xtaganda worker'larni yopish. */
 async function shutdown() {
   closed = true;
-  for (const job of queue.splice(0)) job.resolve(fallbackMove(job.fen));
+  for (const job of queue.splice(0)) job.resolve(fallbackMove(job.fen, job.gameType));
   await Promise.all(
     slots.map(async (slot) => {
       if (slot.job) {
         clearTimeout(slot.job.timer);
-        slot.job.resolve(fallbackMove(slot.job.fen));
+        slot.job.resolve(fallbackMove(slot.job.fen, slot.job.gameType));
         slot.job = null;
       }
       if (slot.worker) await slot.worker.terminate().catch(() => {});
@@ -369,4 +393,4 @@ async function shutdown() {
   );
 }
 
-module.exports = { LEVELS, evaluate, searchBestMove, chooseMove, shutdown };
+module.exports = { LEVELS, evaluate, searchBestMove, searchBest, chooseMove, shutdown };

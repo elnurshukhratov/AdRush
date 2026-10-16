@@ -5,6 +5,16 @@
  * (history.js kabi alohida modul, o'z DICT lug'ati bilan). Shahmat kutubxonasi klientda YO'Q: yurish qonuniyligi, natija va olmos faqat serverda;
  * klient faqat server qaytargan fen / legalMoves ni ko'rsatadi va yurish (from, to, promotion) yuboradi.
  * Matnlar faqat textContent orqali qo'yiladi (XSS yo'q).
+ *
+ * SHASHKA: o'yin turiga bog'liq faqat taxta chizish va yurish kiritish qismi window.AdRushCheckers (checkers.js) da.
+ * Qolgani (start, qidiruv, soat, long-poll, taslim, natija, qayta yuborish) shahmat bilan BIR XIL ishlaydi.
+ * window.AdRushCheckers shartnomasi (hammasi ixtiyoriy emas, capNode va slide dan tashqari):
+ *   renderBoard(board, g, ui)   — #chessBoard ni to'ldiradi. g — server ko'rinishi (g.fen — pozitsiya matni, g.legalMoves — to'liq yo'llar,
+ *                                 g.mustCapture, g.lastMove { path }). ui = { sel, opt, flip, locked, t }. Kataklar: <button class="csq dk|lt" data-sq="c3">.
+ *   onSquare(sq, g, ui)         — bosilgan katak -> { sel: [...kataklar] | null, path?: [...kataklar] (to'liq yo'l — yuboriladi), haptic?: true }.
+ *   optimistic(g, path)         — yurish yuborilganda taxtada darhol ko'rsatish uchun ixtiyoriy holat (S.opt.map ga qo'yiladi).
+ *   slide(board, lastMove)      — (ixtiyoriy) lastMove { path } uchun animatsiya.
+ *   capNode(g, opt, color)      — (ixtiyoriy) o'yinchi paneli uchun olingan donalar tuguni (<span class="ccap">) yoki null.
  */
 (function () {
   const A = window.AdRush;
@@ -16,6 +26,10 @@
 
   const DICT = {
     uz: {
+      g_chess: '♟\uFE0E Shahmat', g_checkers: '⚪ Shashka',
+      rule_ck: 'Rus shashkasi: urish majburiy, damka uzoqqa yuradi. Yutsang +3 💎, yutqazsang −1 💎. Durang — 0.',
+      must_capture: 'Urish majburiy', ck_continue: 'Urishni davom ettiring',
+      rs_NO_MOVES: 'Raqibda dona yoki yurish qolmadi', rs_DRAW_RULE_CK: 'Durang qoidasi (takrorlanish yoki damkalar bilan uzoq yurish)',
       diamonds: '💎 Olmos', wins: 'G‘alaba', losses: 'Mag‘lubiyat', draws: 'Durang',
       play_bot: '🤖 Bot bilan', level: 'Qiyinlik', lv1: 'Oson', lv2: 'O‘rta', lv3: 'Qiyin',
       color: 'Rang', c_white: 'Oq', c_black: 'Qora', c_random: 'Tasodifiy',
@@ -40,6 +54,10 @@
       lim_PAIR_LIMIT: 'Shu raqib bilan 24 soatlik limit to‘ldi — bu o‘yin uchun olmos o‘zgarmadi.',
     },
     ru: {
+      g_chess: '♟\uFE0E Шахматы', g_checkers: '⚪ Шашки',
+      rule_ck: 'Русские шашки: бить обязательно, дамка ходит на любое расстояние. Победа +3 💎, поражение −1 💎. Ничья — 0.',
+      must_capture: 'Бить обязательно', ck_continue: 'Продолжайте взятие',
+      rs_NO_MOVES: 'У соперника не осталось шашек или ходов', rs_DRAW_RULE_CK: 'Правило ничьей (повторение или долгая игра одними дамками)',
       diamonds: '💎 Алмазы', wins: 'Победы', losses: 'Поражения', draws: 'Ничьи',
       play_bot: '🤖 С ботом', level: 'Сложность', lv1: 'Лёгкий', lv2: 'Средний', lv3: 'Сложный',
       color: 'Цвет', c_white: 'Белые', c_black: 'Чёрные', c_random: 'Случайно',
@@ -64,6 +82,10 @@
       lim_PAIR_LIMIT: 'Лимит за 24 часа с этим соперником исчерпан — алмазы за эту партию не изменились.',
     },
     en: {
+      g_chess: '♟\uFE0E Chess', g_checkers: '⚪ Checkers',
+      rule_ck: 'Russian draughts: capturing is mandatory, kings fly. Win +3 💎, lose −1 💎. Draw — 0.',
+      must_capture: 'Capture is mandatory', ck_continue: 'Continue the capture',
+      rs_NO_MOVES: 'The opponent has no pieces or moves left', rs_DRAW_RULE_CK: 'Draw rule (repetition or long play with kings only)',
       diamonds: '💎 Diamonds', wins: 'Wins', losses: 'Losses', draws: 'Draws',
       play_bot: '🤖 Vs bot', level: 'Difficulty', lv1: 'Easy', lv2: 'Medium', lv3: 'Hard',
       color: 'Color', c_white: 'White', c_black: 'Black', c_random: 'Random',
@@ -103,6 +125,7 @@
 
   const S = {
     panel: 'loading', // loading | error | start | game
+    gameType: 'CHESS', // 'CHESS' | 'CHECKERS' — start ekranidagi tanlov; faol o'yin tiklanganda o'yinning gameType idan olinadi
     game: null, // serverdan kelgan o'yin ko'rinishi
     stats: null,
     sel: null, // tanlangan maydon
@@ -138,6 +161,20 @@
   };
   const QUEUE = '/api/chess/online/queue';
 
+  // ---------- O'yin turi (shahmat / shashka) ----------
+  const normType = (v) => (String(v || '').toUpperCase() === 'CHECKERS' ? 'CHECKERS' : 'CHESS'); // gameType yo'q (eski o'yin) — shahmat
+  const isCk = () => S.gameType === 'CHECKERS';
+  const apiType = () => S.gameType.toLowerCase(); // API: 'chess' | 'checkers'
+  const CK = () => window.AdRushCheckers || null; // checkers.js (chess.js dan oldin ulanadi)
+
+  function setType(v) {
+    const nt = normType(v);
+    if (nt === S.gameType) return;
+    S.gameType = nt;
+    applyTexts();
+    renderStart();
+  }
+
   const ok = (r) => r.status >= 200 && r.status < 300 && r.data && r.data.success;
   const reasonOf = (r) => (r && r.data && r.data.reason) || '';
 
@@ -145,6 +182,7 @@
   function applyTexts() {
     document.querySelectorAll('#view-home [data-ck]').forEach((n) => { n.textContent = t(n.dataset.ck); });
     $('chessErrText').textContent = t(S.errKey);
+    $('chessRule').textContent = t(isCk() ? 'rule_ck' : 'rule');
   }
 
   function show(panel) {
@@ -171,6 +209,11 @@
       $('chessLosses').textContent = A.nf.format(st.losses);
       $('chessDraws').textContent = A.nf.format(st.draws);
     }
+    document.querySelectorAll('#chessGames .cchip').forEach((b) => {
+      const on = b.dataset.game === S.gameType;
+      b.classList.toggle('active', on);
+      b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
     document.querySelectorAll('#chessLevels .cchip').forEach((b) => {
       const on = Number(b.dataset.level) === S.level;
       b.classList.toggle('active', on);
@@ -183,11 +226,13 @@
     });
     $('chessStartBot').disabled = S.starting || S.joining;
     $('chessOnline').disabled = S.starting || S.joining;
+    $('chessGames').querySelectorAll('.cchip').forEach((b) => { b.disabled = S.starting || S.joining; });
   }
 
   async function loadStats() {
-    const res = await api('GET', '/api/chess/stats');
-    if (!ok(res)) return false;
+    const type = S.gameType; // tur almashsa, eski javob yangisini bosib ketmasin
+    const res = await api('GET', '/api/chess/stats?game=' + apiType());
+    if (!ok(res) || type !== S.gameType) return false;
     S.stats = { wins: res.data.wins, losses: res.data.losses, draws: res.data.draws, diamonds: res.data.diamonds };
     return true;
   }
@@ -258,6 +303,7 @@
 
   // ---------- O'yin holati ----------
   function applyGame(g) {
+    setType(g.gameType); // faol o'yinning turi (gameType yo'q bo'lsa — shahmat)
     const prev = S.game && S.game.id === g.id ? S.game : null;
     const fresh = !prev || g.moveCount > S.shownCount; // taxtada hali ko'rinmagan yangi yurish (raqib / bot)
     S.game = g;
@@ -403,6 +449,7 @@
   }
 
   function showSearch(waitedSec) {
+    $('chessSearchIco').textContent = isCk() ? '⚪' : '♞';
     S.searching = true;
     S.cancelling = false;
     S.qFails = 0;
@@ -432,6 +479,7 @@
       return true;
     }
     if (d.status === 'searching') {
+      if (d.gameType) setType(d.gameType); // ilova qayta ochilganda navbat qaysi turdaligi
       if (S.searching) S.searchStart = Date.now() - (Number(d.waitedSec) || 0) * 1000;
       else showSearch(d.waitedSec);
       return true;
@@ -462,7 +510,7 @@
     if (S.joining || S.starting || S.searching) return;
     S.joining = true;
     renderStart();
-    const res = await api('POST', QUEUE, {}, { timeout: 15000 });
+    const res = await api('POST', QUEUE, { gameType: apiType() }, { timeout: 15000 });
     S.joining = false;
     renderStart();
     if (ok(res)) { A.haptic('light'); await onQueueData(res.data); return; }
@@ -477,7 +525,7 @@
     let res = await api('GET', QUEUE);
     if (ok(res) && res.data.status === 'idle' && S.searching && !S.cancelling) {
       // navbat yozuvi eskirgan (masalan, ilova fonda qolgan) — qidiruv davom etadi
-      res = await api('POST', QUEUE, {}, { timeout: 15000 });
+      res = await api('POST', QUEUE, { gameType: apiType() }, { timeout: 15000 });
     }
     S.qBusy = false;
     if (!S.searching || S.cancelling) return;
@@ -565,6 +613,11 @@
   function slideMove(lm) {
     if (!lm || (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches)) return;
     const board = $('chessBoard');
+    if (lm.path) { // shashka: { path } — animatsiyani checkers.js chizadi
+      const D = CK();
+      if (D && D.slide) D.slide(board, lm);
+      return;
+    }
     const from = board.querySelector('[data-sq="' + lm.from + '"]');
     const to = board.querySelector('[data-sq="' + lm.to + '"]');
     const pc = to && to.querySelector('.pc');
@@ -612,6 +665,15 @@
   function renderBoard() {
     const g = S.game;
     const board = $('chessBoard');
+    board.classList.toggle('ckb', isCk()); // CSS: .cboard.ckb — shashka taxtasi
+    if (isCk()) {
+      const D = CK();
+      if (D) D.renderBoard(board, g, { sel: S.sel, opt: S.opt, flip: g.yourColor === 'b', locked: !isMyTurn(), t });
+      else board.replaceChildren();
+      board.classList.toggle('locked', !isMyTurn());
+      board.classList.toggle('wait', Boolean(S.opt));
+      return;
+    }
     const map = S.opt ? S.opt.map : parseFen(g.fen);
     const lm = S.opt ? { from: S.opt.from, to: S.opt.to } : g.lastMove;
     const flip = g.yourColor === 'b';
@@ -649,7 +711,7 @@
     board.classList.toggle('wait', Boolean(S.opt));
   }
 
-  function playerBar(node, label, active, color, mat) {
+  function playerBar(node, label, active, color, cap) {
     node.classList.toggle('turn', active);
     const right = el('div', 'cbar-r');
     if (S.clock) {
@@ -660,7 +722,7 @@
       right.appendChild(el('i', null, t(node.id === 'chessMe' ? 'turn_you' : 'turn_opp')));
     }
     const left = el('div', 'cbar-l');
-    left.append(el('span', 'cdot'), el('span', 'cname', label), capNode(mat, color));
+    left.append(el('span', 'cdot'), el('span', 'cname', label), cap);
     node.replaceChildren(left, right);
   }
 
@@ -674,9 +736,15 @@
       : '👤 ' + (g.opponent && g.opponent.name ? g.opponent.name : t('opp').replace('👤 ', '')); // ism — textContent orqali (XSS yo'q)
     const oppColor = g.yourColor === 'w' ? 'b' : 'w';
     const turn = turnNow();
-    const mat = materialOf(S.opt ? S.opt.map : parseFen(g.fen));
-    playerBar($('chessOpp'), oppLabel, active && turn !== g.yourColor, oppColor, mat);
-    playerBar($('chessMe'), t('you'), active && turn === g.yourColor, g.yourColor, mat);
+    const ck = isCk();
+    const mat = ck ? null : materialOf(S.opt ? S.opt.map : parseFen(g.fen));
+    const capOf = (c) => {
+      if (!ck) return capNode(mat, c);
+      const D = CK();
+      return (D && D.capNode && D.capNode(g, S.opt, c)) || el('span', 'ccap');
+    };
+    playerBar($('chessOpp'), oppLabel, active && turn !== g.yourColor, oppColor, capOf(oppColor));
+    playerBar($('chessMe'), t('you'), active && turn === g.yourColor, g.yourColor, capOf(g.yourColor));
     renderBoard();
 
     const st = $('chessStatus');
@@ -684,6 +752,7 @@
     if (!active) { st.textContent = t('st_over'); }
     else if (S.opt && !S.busy) { st.textContent = t('unsent'); st.classList.add('bad'); }
     else if (turn !== g.yourColor || S.busy) { st.textContent = t(online ? 'st_wait' : 'st_think'); st.classList.add('think'); }
+    else if (ck && g.mustCapture) { st.textContent = t(S.sel && S.sel.length > 1 ? 'ck_continue' : 'must_capture'); st.classList.add('bad'); }
     else if (g.inCheck) { st.textContent = t('st_check'); st.classList.add('bad'); }
     else st.textContent = t('st_you');
 
@@ -701,7 +770,8 @@
     const d = Number(g.yourDelta) || 0;
     const delta = (d > 0 ? '+' + A.nf.format(d) : d < 0 ? '−' + A.nf.format(-d) : '0') + ' 💎';
     const note = g.limit && DICT.uz['lim_' + g.limit] ? t('lim_' + g.limit) : ''; // noma'lum limit kodi — izoh yo'q
-    return { kind, delta, d, reason: t('rs_' + g.endReason), note };
+    const rk = 'rs_' + g.endReason + (g.endReason === 'DRAW_RULE' && normType(g.gameType) === 'CHECKERS' ? '_CK' : '');
+    return { kind, delta, d, reason: t(rk), note };
   }
 
   /** Ixcham natija kartasi (taxta ostida): oyna yopilgandan keyin ham "Yana o'ynash" / "Bosh sahifa" qoladi. */
@@ -803,8 +873,20 @@
     return Boolean(ch) && ((ch === 'P' && to[1] === '8') || (ch === 'p' && to[1] === '1'));
   }
 
+  /** Shashka: bosishni checkers.js izohlaydi; to'liq yo'l tayyor bo'lsa avtomatik yuboriladi. Qoidani klient hisoblamaydi (legalMoves serverdan). */
+  function onCheckersSquare(sq) {
+    const D = CK();
+    if (!D) return;
+    const act = D.onSquare(sq, S.game, { sel: S.sel }) || {};
+    S.sel = act.sel && act.sel.length ? act.sel : null;
+    if (Array.isArray(act.path) && act.path.length >= 2) { sendPath(act.path); return; }
+    if (act.haptic) A.haptic('select');
+    renderGame(); // holat qatori ("Urishni davom ettiring") ham yangilanadi
+  }
+
   function onSquare(sq) {
     if (!isMyTurn()) return;
+    if (isCk()) { onCheckersSquare(sq); return; }
     const legal = S.game.legalMoves || {};
     if (S.sel && (legal[S.sel] || []).includes(sq)) {
       if (isPromotion(S.sel, sq)) { openPromo(S.sel, sq); return; }
@@ -834,6 +916,7 @@
 
   function failMessage(res) {
     const reason = reasonOf(res);
+    if (reason === 'MUST_CAPTURE') return 'must_capture';
     if (['ILLEGAL_MOVE', 'PROMOTION_REQUIRED', 'BAD_PROMOTION', 'BAD_MOVE'].includes(reason)) return 'illegal';
     if (['MOVE_CONFLICT', 'NOT_YOUR_TURN', 'GAME_FINISHED'].includes(reason)) return 'synced';
     return 'err_generic';
@@ -849,10 +932,25 @@
     if (!g || S.busy || S.out) return Promise.resolve();
     const body = { from, to, expectedMoveCount: g.moveCount };
     if (promotion) body.promotion = promotion;
+    return submitMove(body, { from, to, promotion, map: applyOpt(parseFen(g.fen), from, to, promotion) }, { from, to });
+  }
+
+  /** Shashka yurishi: { path: [...kataklar], expectedMoveCount } — server bitta qonuniy yo'lni topadi. */
+  function sendPath(path) {
+    const g = S.game;
+    if (!g || S.busy || S.out) return Promise.resolve();
+    const D = CK();
+    const map = D && D.optimistic ? D.optimistic(g, path) : null;
+    return submitMove({ path, expectedMoveCount: g.moveCount }, { path, map }, { path });
+  }
+
+  /** Ikkala tur uchun umumiy: optimistik ko'rsatish, soat, yuborish (flushMove) va animatsiya. */
+  function submitMove(body, opt, slide) {
+    const g = S.game;
     S.sel = null;
     S.pending = null;
     $('chessPromo').hidden = true;
-    S.opt = { from, to, promotion, base: g.moveCount, map: applyOpt(parseFen(g.fen), from, to, promotion) };
+    S.opt = Object.assign({ base: g.moveCount }, opt);
     S.out = { id: g.id, body };
     S.shownCount = g.moveCount + 1;
     if (S.clock && g.mode === 'ONLINE') { // mening soatim darhol to'xtaydi, raqibniki yura boshlaydi
@@ -861,7 +959,7 @@
     A.haptic('select');
     const sent = flushMove(); // S.busy sinxron o'rnatiladi (birinchi await gacha), shuning uchun render "yuborilmadi" demaydi
     renderGame();
-    slideMove({ from, to });
+    slideMove(slide);
     return sent;
   }
 
@@ -918,7 +1016,7 @@
     if (S.starting) return;
     S.starting = true;
     renderStart();
-    const res = await api('POST', '/api/chess/bot/start', { level: S.level, color: S.color }, { timeout: 15000 });
+    const res = await api('POST', '/api/chess/bot/start', { level: S.level, color: S.color, gameType: apiType() }, { timeout: 15000 });
     S.starting = false;
     renderStart();
     if (ok(res)) { A.haptic('light'); applyGame(res.data.game); return; }
@@ -971,6 +1069,13 @@
     });
     $('chessPromo').addEventListener('click', (e) => {
       if (e.target === $('chessPromo')) { S.pending = null; $('chessPromo').hidden = true; }
+    });
+    $('chessGames').addEventListener('click', (e) => {
+      const b = e.target.closest('.cchip');
+      if (!b || b.disabled || S.panel !== 'start') return;
+      A.haptic('select');
+      setType(b.dataset.game);
+      loadStats().then((okk) => { if (okk) renderStart(); }).catch(() => {});
     });
     $('chessLevels').addEventListener('click', (e) => {
       const b = e.target.closest('.cchip');

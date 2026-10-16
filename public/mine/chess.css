@@ -1,18 +1,20 @@
 /* ===== AdRush — Shahmat (Home) =====
    Mavjud dizayn tokenlari (mine.css) va liquid-glass uslubi; Kun / Tun mavzusiga mos. Tashqi rasm / shrift yo'q. */
 :root, [data-theme="dark"] {
-  --sq-lt: #AFC4DE; --sq-dk: #44668F;
+  --sq-lt: #BCCFE6; --sq-lt2: #A6BDD9; --sq-dk: #4B6F9A; --sq-dk2: #3C5E88;
   --sq-sel: rgba(250, 204, 21, .62); --sq-last: rgba(250, 204, 21, .34);
   --sq-last-lt: #F2E3A0; --sq-last-dk: #C9B24F; --sq-ring: #FACC15;
-  --sq-tgt: rgba(2, 16, 28, .42); --sq-chk: rgba(248, 113, 113, .78);
+  --sq-tgt: rgba(2, 16, 28, .42); --sq-cap: rgba(248, 113, 113, .85); --sq-chk: rgba(248, 113, 113, .78);
+  --board-frame: linear-gradient(145deg, #2B3F5E, #16233A); --board-frame-edge: rgba(255, 255, 255, .14);
   --pc-w: #FFFFFF; --pc-w-edge: #0B1424; --pc-b: #0B1424; --pc-b-edge: rgba(255, 255, 255, .55);
   --sq-coord: rgba(255, 255, 255, .72);
 }
 [data-theme="light"] {
-  --sq-lt: #E4EEFA; --sq-dk: #7DA2CF;
+  --sq-lt: #EAF2FC; --sq-lt2: #D9E6F6; --sq-dk: #7FA4D0; --sq-dk2: #6B92C2;
   --sq-sel: rgba(250, 204, 21, .70); --sq-last: rgba(250, 204, 21, .42);
   --sq-last-lt: #F6E8A8; --sq-last-dk: #D4BC55; --sq-ring: #F59E0B;
-  --sq-tgt: rgba(10, 22, 48, .30); --sq-chk: rgba(220, 38, 38, .62);
+  --sq-tgt: rgba(10, 22, 48, .30); --sq-cap: rgba(220, 38, 38, .75); --sq-chk: rgba(220, 38, 38, .62);
+  --board-frame: linear-gradient(145deg, #B8CBE4, #94AFD2); --board-frame-edge: rgba(255, 255, 255, .7);
   --pc-w: #FFFFFF; --pc-w-edge: #0A1630; --pc-b: #0A1630; --pc-b-edge: rgba(255, 255, 255, .7);
   --sq-coord: rgba(10, 22, 48, .62);
 }
@@ -80,30 +82,34 @@
 .csearch-ring::before { content: ""; position: absolute; inset: 0; border-radius: 50%; border: 3px solid var(--line-strong); border-top-color: var(--primary); animation: csearchSpin 1s linear infinite; }
 @keyframes csearchSpin { to { transform: rotate(360deg); } }
 
-.cboard-wrap { width: 100%; max-width: 480px; margin: 0 auto; }
-.cboard { container-type: inline-size; display: grid; grid-template-columns: repeat(8, 1fr); grid-auto-rows: 1fr; aspect-ratio: 1 / 1; width: 100%; border-radius: 14px; overflow: hidden; border: 1px solid var(--line-strong); box-shadow: var(--card-shadow); touch-action: manipulation; user-select: none; -webkit-user-select: none; }
+.cboard-wrap { width: 100%; max-width: 480px; margin: 0 auto; padding: 7px; border-radius: 22px; background: var(--board-frame); border: 1px solid var(--board-frame-edge); box-shadow: var(--card-shadow), 0 10px 28px rgba(0, 0, 0, .22), inset 0 1px 0 rgba(255, 255, 255, .18); }
+.cboard { container-type: inline-size; display: grid; grid-template-columns: repeat(8, 1fr); grid-auto-rows: 1fr; aspect-ratio: 1 / 1; width: 100%; border-radius: 14px; overflow: hidden; border: 0; box-shadow: 0 0 0 1px rgba(0, 0, 0, .25), inset 0 0 18px rgba(0, 0, 0, .18); touch-action: manipulation; user-select: none; -webkit-user-select: none; transition: opacity .2s; }
 .cboard.locked { pointer-events: none; }
 .cboard.wait { cursor: progress; }
 .csq { position: relative; display: grid; place-items: center; padding: 0; margin: 0; border: 0; border-radius: 0; font: inherit; cursor: pointer; color: inherit; min-width: 0; min-height: 0; }
-.csq.lt { background: var(--sq-lt); }
-.csq.dk { background: var(--sq-dk); }
-.csq.lt.last { background: var(--sq-last-lt); }
-.csq.dk.last { background: var(--sq-last-dk); }
+.csq.lt { background: linear-gradient(145deg, var(--sq-lt), var(--sq-lt2)); }
+.csq.dk { background: linear-gradient(145deg, var(--sq-dk), var(--sq-dk2)); }
+.csq.lt.last { background: var(--sq-last-lt); box-shadow: inset 0 0 0 2px rgba(250, 204, 21, .55); }
+.csq.dk.last { background: var(--sq-last-dk); box-shadow: inset 0 0 0 2px rgba(250, 204, 21, .55); }
 .csq.sel::before, .csq.chk::before { content: ""; position: absolute; inset: 0; pointer-events: none; }
-.csq.sel::before { background: var(--sq-sel); box-shadow: inset 0 0 0 3px var(--sq-ring); }
+.csq.sel::before { background: var(--sq-sel); box-shadow: inset 0 0 0 3px var(--sq-ring), inset 0 0 14px rgba(250, 204, 21, .55); animation: csel 1.4s ease-in-out infinite; }
+@keyframes csel { 50% { opacity: .72; } }
 .csq:active { filter: brightness(1.06); }
-.csq.chk::before { background: radial-gradient(circle, var(--sq-chk) 0 55%, transparent 80%); }
-.csq.tgt::after { content: ""; position: absolute; width: 28%; height: 28%; border-radius: 50%; background: var(--sq-tgt); pointer-events: none; }
-.csq.tgt.cap::after { width: 86%; height: 86%; background: none; border: 4px solid var(--sq-tgt); }
-.csq .co-r, .csq .co-f { position: absolute; font-size: 9px; font-weight: 700; line-height: 1; color: var(--sq-coord); pointer-events: none; }
+.csq.chk::before { background: radial-gradient(circle, var(--sq-chk) 0 55%, transparent 80%); animation: cchk 1.1s ease-in-out infinite; }
+@keyframes cchk { 50% { opacity: .55; } }
+.csq.tgt::after { content: ""; position: absolute; width: 30%; height: 30%; border-radius: 50%; background: var(--sq-tgt); box-shadow: 0 0 0 4px rgba(255, 255, 255, .10); pointer-events: none; }
+.csq.tgt.cap::after { width: 90%; height: 90%; background: radial-gradient(circle, transparent 58%, var(--sq-cap) 60% 72%, transparent 74%); box-shadow: none; border: 0; }
+.csq .co-r, .csq .co-f { position: absolute; font-size: 9px; font-weight: 800; line-height: 1; color: var(--sq-coord); pointer-events: none; letter-spacing: .02em; }
+.csq.lt .co-r, .csq.lt .co-f { color: var(--sq-dk); opacity: .85; }
+.csq.dk .co-r, .csq.dk .co-f { color: var(--sq-lt); opacity: .85; }
 .csq .co-r { left: 3px; top: 3px; }
 .csq .co-f { right: 3px; bottom: 3px; }
-.pc { position: relative; z-index: 1; will-change: transform; filter: drop-shadow(0 1.5px 1.5px rgba(0, 0, 0, .28)); font-size: 9.2vw; line-height: 1; font-family: "Segoe UI Symbol", "Noto Sans Symbols 2", "Apple Symbols", "DejaVu Sans", system-ui, sans-serif; pointer-events: none; }
+.pc { position: relative; z-index: 1; will-change: transform; filter: drop-shadow(0 2px 2px rgba(0, 0, 0, .34)); font-size: 9.2vw; line-height: 1; font-family: "Segoe UI Symbol", "Noto Sans Symbols 2", "Apple Symbols", "DejaVu Sans", system-ui, sans-serif; pointer-events: none; }
 @supports (container-type: inline-size) { .pc { font-size: 10.2cqw; } }
 @media (min-width: 520px) { .pc { font-size: 49px; } }
 .pc.mv { z-index: 6; }
-.pc.w { color: var(--pc-w); text-shadow: 0 0 1px var(--pc-w-edge), 0 0 1px var(--pc-w-edge), 0 1px 2px rgba(0, 0, 0, .55); }
-.pc.b { color: var(--pc-b); text-shadow: 0 0 1px var(--pc-b-edge), 0 1px 1px rgba(255, 255, 255, .25); }
+.pc.w { color: var(--pc-w); text-shadow: 1px 0 0 var(--pc-w-edge), -1px 0 0 var(--pc-w-edge), 0 1px 0 var(--pc-w-edge), 0 -1px 0 var(--pc-w-edge), 0 3px 3px rgba(0, 0, 0, .35); }
+.pc.b { color: var(--pc-b); text-shadow: 0 0 1px var(--pc-b-edge), 0 0 2px var(--pc-b-edge), 0 1px 0 rgba(255, 255, 255, .22), 0 3px 3px rgba(0, 0, 0, .4); }
 
 .chess-status { align-self: center; text-align: center; font-size: 13.5px; font-weight: 700; min-height: 20px; padding: 7px 16px; border-radius: 999px; background: var(--card); border: 1px solid var(--line); box-shadow: inset 0 1px 0 var(--inset); color: var(--text); max-width: 100%; }
 .chess-status.think { color: var(--primary); }
@@ -139,7 +145,7 @@
 /* Natija oynasi (body ichida) */
 .cmodal-bg { position: fixed; inset: 0; z-index: 150; display: grid; place-items: center; padding: 24px; background: var(--scrim); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); animation: fade .2s var(--ease); }
 .cmodal { position: relative; width: min(100%, 360px); display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center; padding: 26px 20px 20px; border-radius: 26px; background: var(--card-solid); border: 1px solid var(--line-strong); box-shadow: var(--shadow), inset 0 1px 0 var(--inset); animation: cmodalIn .35s var(--spring); }
-.cmodal.win { border-color: color-mix(in srgb, var(--good) 45%, var(--line-strong)); }
+.cmodal.win { border-color: color-mix(in srgb, var(--good) 45%, var(--line-strong)); box-shadow: var(--shadow), 0 0 44px color-mix(in srgb, var(--good) 28%, transparent), inset 0 1px 0 var(--inset); }
 .cmodal.lose { border-color: color-mix(in srgb, var(--bad) 40%, var(--line-strong)); }
 .cmodal-x { position: absolute; top: 10px; right: 12px; width: 32px; height: 32px; border-radius: 50%; border: 0; background: var(--card-2); color: var(--hint); font-size: 14px; cursor: pointer; }
 .cmodal-ico { font-size: 52px; line-height: 1; margin-bottom: 4px; }
@@ -152,4 +158,43 @@
 .cmodal-btns .btn { width: 100%; height: 46px; border-radius: 14px; }
 @keyframes cmodalIn { from { opacity: 0; transform: translateY(14px) scale(.94); } to { opacity: 1; transform: none; } }
 
-@media (prefers-reduced-motion: reduce) { .chess-status.think::after, .chess-player.turn .cdot { animation: none; } .cchip, .cpromo, .cmodal, .cmodal-bg, .cclock, .chess-conn { transition: none; animation: none; } .csearch-ring::before { animation-duration: 3s; } }
+@media (prefers-reduced-motion: reduce) { .chess-status.think::after, .chess-player.turn .cdot, .csq.sel::before, .csq.chk::before { animation: none; } .cchip, .cpromo, .cmodal, .cmodal-bg, .cclock, .chess-conn { transition: none; animation: none; } .csearch-ring::before { animation-duration: 3s; } }
+
+/* ===== SHASHKA (rus shashkasi): o'yin turi tanlovi va taxta ===== */
+.cgames { margin-bottom: 0; gap: 10px; }
+.cgame { font-size: 15px; padding: 14px 8px; border-radius: 16px; }
+.cgame.active { background: linear-gradient(145deg, color-mix(in srgb, var(--primary) 22%, var(--seg-on)), var(--seg-on)); }
+
+/* Shashka taxtasi — yog'och uslubi (shahmatdan farqlash uchun); tokenlar faqat shu taxta ichida o'zgaradi */
+.cboard.ckb { --sq-lt: #F0DFBD; --sq-lt2: #E4CDA3; --sq-dk: #94603A; --sq-dk2: #7F4F2C;
+  --sq-last-lt: #F3E39A; --sq-last-dk: #C79A3A; --sq-ring: #FFD54A; --sq-sel: rgba(255, 213, 74, .55); --sq-tgt: rgba(255, 236, 190, .55);
+  --sq-coord: rgba(255, 246, 225, .8); }
+[data-theme="light"] .cboard.ckb { --sq-lt: #F6E8CB; --sq-lt2: #EBD6AE; --sq-dk: #A56F44; --sq-dk2: #905D36; --sq-tgt: rgba(255, 240, 200, .6); }
+.cboard-wrap:has(.cboard.ckb) { background: linear-gradient(145deg, #5A3A22, #2F1D10); border-color: rgba(255, 220, 170, .22); }
+[data-theme="light"] .cboard-wrap:has(.cboard.ckb) { background: linear-gradient(145deg, #C99A6B, #A97848); }
+.cboard.ckb .csq.lt { cursor: default; }
+.cboard.ckb .csq.dk.last { background-image: none; background-color: var(--sq-last-dk); } /* oxirgi yurish ajratilishi yog'och naqshidan ustun turadi */
+.cboard.ckb .csq.dk { min-width: 40px; min-height: 40px; background-image: linear-gradient(145deg, var(--sq-dk), var(--sq-dk2)), repeating-linear-gradient(90deg, rgba(0, 0, 0, .05) 0 2px, transparent 2px 7px); background-blend-mode: normal; } /* mobilda bosish maydoni kamida 40px */
+
+/* Dona: hajmli dumaloq shashka (qalinlik + ichki halqa). Oq / qora, tojli damka */
+.ckp { position: relative; z-index: 1; display: block; width: 78%; aspect-ratio: 1 / 1; border-radius: 50%; pointer-events: none; will-change: transform;
+  box-shadow: 0 3px 0 rgba(0, 0, 0, .32), 0 6px 9px rgba(0, 0, 0, .38), inset 0 -3px 5px rgba(0, 0, 0, .2), inset 0 2px 2px rgba(255, 255, 255, .5); }
+.ckp::before { content: ""; position: absolute; inset: 17%; border-radius: 50%; border: 2px solid rgba(0, 0, 0, .16); box-shadow: inset 0 1px 1px rgba(255, 255, 255, .3), 0 1px 0 rgba(255, 255, 255, .25); pointer-events: none; }
+.ckp.w { background: radial-gradient(circle at 35% 28%, #FFFFFF 0 28%, #F1E6D0 68%, #D2C0A0 100%); border: 2px solid #8C7452; }
+.ckp.b { background: radial-gradient(circle at 35% 28%, #5A4A44 0 18%, #2A1F1C 62%, #120C0A 100%); border: 2px solid #050302; }
+.ckp.b::before { border-color: rgba(255, 255, 255, .16); }
+.ckp.k::after { content: "♚"; position: absolute; inset: 0; display: grid; place-items: center; font-size: 64%; line-height: 1; pointer-events: none;
+  font-family: "Segoe UI Symbol", "Noto Sans Symbols 2", "Apple Symbols", "DejaVu Sans", system-ui, sans-serif; }
+.ckp.w.k::after { color: #B07A0A; text-shadow: 0 1px 0 rgba(255, 255, 255, .6), 0 0 2px rgba(120, 80, 0, .5); }
+.ckp.b.k::after { color: #FFD54A; text-shadow: 0 0 6px rgba(255, 213, 74, .65), 0 1px 0 rgba(0, 0, 0, .6); }
+.ckp.k { outline: 2px solid rgba(255, 213, 74, .55); outline-offset: -5px; }
+.ckp.mv { z-index: 6; }
+
+/* Holatlar: yura oladigan dona, oraliq qo'nish, olingan donalar */
+.csq.can .ckp { box-shadow: 0 0 0 3px color-mix(in srgb, var(--sq-ring) 80%, transparent), 0 0 14px color-mix(in srgb, var(--sq-ring) 60%, transparent), 0 3px 0 rgba(0, 0, 0, .32), 0 6px 9px rgba(0, 0, 0, .38), inset 0 2px 2px rgba(255, 255, 255, .5); }
+.csq.via::before { content: ""; position: absolute; inset: 0; pointer-events: none; background: var(--sq-sel); box-shadow: inset 0 0 0 3px var(--sq-ring); opacity: .75; }
+.cboard.ckb .csq.tgt::after { width: 30%; height: 30%; background: var(--sq-tgt); box-shadow: 0 0 0 4px rgba(255, 255, 255, .12); }
+.cboard.ckb .csq.tgt.cap::after { width: 32%; height: 32%; border: 0; background: var(--sq-ring); box-shadow: 0 0 0 4px color-mix(in srgb, var(--sq-ring) 38%, transparent), 0 0 12px color-mix(in srgb, var(--sq-ring) 70%, transparent); }
+.ckmini { display: inline-block; width: 13px; height: 13px; border-radius: 50%; margin-right: 0; vertical-align: middle; box-shadow: 0 1px 1px rgba(0, 0, 0, .35); }
+.ckmini.w { background: #F4EAD6; border: 1.5px solid #8C7452; }
+.ckmini.b { background: #2A1F1C; border: 1.5px solid rgba(255, 255, 255, .35); }
