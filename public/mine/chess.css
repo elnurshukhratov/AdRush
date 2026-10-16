@@ -198,3 +198,70 @@
 .ckmini { display: inline-block; width: 13px; height: 13px; border-radius: 50%; margin-right: 0; vertical-align: middle; box-shadow: 0 1px 1px rgba(0, 0, 0, .35); }
 .ckmini.w { background: #F4EAD6; border: 1.5px solid #8C7452; }
 .ckmini.b { background: #2A1F1C; border: 1.5px solid rgba(255, 255, 255, .35); }
+/* ===== v6: SVG donalar, tozalangan taxta, shashka damkasi ===== */
+
+/* --- Shaxmat donalari (pieces.js): rang CSS o'zgaruvchilaridan --- */
+.pc { display: block; width: 88%; height: auto; aspect-ratio: 1 / 1; font-size: 0; line-height: 0; text-shadow: none; transition: transform .16s var(--ease); }
+.pc .pcs { display: block; width: 100%; height: 100%; overflow: visible; }
+.pc.w { --pcs-fill: #FBF7EC; --pcs-line: #1A2437; --pcs-shine: rgba(255, 255, 255, .95); --pcs-shade: rgba(26, 36, 55, .14);
+  filter: drop-shadow(0 2px 1.5px rgba(0, 0, 0, .38)); }
+.pc.b { --pcs-fill: #33456A; --pcs-line: #060B15; --pcs-shine: rgba(255, 255, 255, .26); --pcs-shade: rgba(0, 0, 0, .3);
+  filter: drop-shadow(0 0 .7px rgba(255, 255, 255, .75)) drop-shadow(0 2px 1.5px rgba(0, 0, 0, .45)); }
+[data-theme="light"] .pc.b { --pcs-fill: #2A3B5E; }
+.pc.mv { z-index: 6; }
+.csq.sel .pc { transform: translateY(-7%) scale(1.07); }
+.csq.sel .pc.w, .csq.sel .pc.b { filter: drop-shadow(0 6px 4px rgba(0, 0, 0, .35)); }
+
+/* Olingan figuralar (o'yinchi paneli) */
+.ccap .cp { display: inline-block; width: 19px; height: 19px; margin-right: -6px; font-size: 0; filter: none; }
+.ccap .cp.w { --pcs-fill: #FBF7EC; --pcs-line: #1A2437; --pcs-shine: transparent; --pcs-shade: transparent; text-shadow: none; }
+.ccap .cp.b { --pcs-fill: #33456A; --pcs-line: #060B15; --pcs-shine: transparent; --pcs-shade: transparent; text-shadow: none; }
+[data-theme="dark"] .ccap .cp.b, :root:not([data-theme]) .ccap .cp.b { filter: drop-shadow(0 0 .6px rgba(255, 255, 255, .8)); }
+.ccap .cp .pcs { width: 100%; height: 100%; }
+
+/* Promotion tanlovi */
+.cpromo-row .pc { width: 42px; height: 42px; margin: 0 auto; }
+.cpromo-row .pc.w { --pcs-fill: #FBF7EC; text-shadow: none; }
+.cpromo-row button { padding: 10px 4px 8px; }
+
+/* --- Taxta: yumshoq qirralar, chuqurlik --- */
+.cboard-wrap { padding: 8px; border-radius: 24px; box-shadow: var(--card-shadow), 0 14px 34px rgba(0, 0, 0, .26), inset 0 1px 0 rgba(255, 255, 255, .2), inset 0 -2px 0 rgba(0, 0, 0, .18); }
+.cboard { border-radius: 15px; box-shadow: 0 0 0 1.5px rgba(0, 0, 0, .3), inset 0 0 22px rgba(0, 0, 0, .2), 0 1px 0 rgba(255, 255, 255, .15); }
+.csq.lt { background: linear-gradient(160deg, var(--sq-lt), var(--sq-lt2)); }
+.csq.dk { background: linear-gradient(160deg, var(--sq-dk), var(--sq-dk2)); }
+.csq .co-r, .csq .co-f { font-size: 9.5px; font-weight: 800; letter-spacing: .03em; }
+/* Yurish nishonlari: ravshanroq, kattaroq bosish maydoni */
+.csq.tgt::after { width: 32%; height: 32%; background: var(--sq-tgt); box-shadow: 0 0 0 3px rgba(255, 255, 255, .16); animation: ctgt .22s var(--ease); }
+.csq.tgt.cap::after { width: 92%; height: 92%; animation: ctgt .22s var(--ease); }
+@keyframes ctgt { from { transform: scale(.4); opacity: 0; } to { transform: none; opacity: 1; } }
+/* Shoh (mat xavfi): yumshoq qizil nur */
+.csq.chk::before { background: radial-gradient(circle, rgba(248, 113, 113, .95) 0, var(--sq-chk) 42%, transparent 78%); }
+
+/* O'yinchi paneli: navbat nuri bir xil, ism va soat o'qilishi yaxshiroq */
+.chess-player { min-height: 50px; border-radius: 18px; background: linear-gradient(180deg, var(--card), var(--card-2)); }
+.cname { letter-spacing: -.01em; }
+.chess-status { padding: 8px 18px; font-size: 14px; box-shadow: inset 0 1px 0 var(--inset), 0 2px 10px rgba(0, 0, 0, .1); }
+
+/* --- Shashka: damka belgisi (SVG toj) va dona holatlari --- */
+.ckp.k::after { content: none; }
+.ckcrown { position: absolute; left: 50%; top: 50%; width: 58%; height: 58%; transform: translate(-50%, -50%); pointer-events: none; overflow: visible; }
+.ckp.w .ckcrown { fill: #C98A0C; stroke: #7A4E00; stroke-width: .9; stroke-linejoin: round; filter: drop-shadow(0 1px 0 rgba(255, 255, 255, .7)); }
+.ckp.b .ckcrown { fill: #FFD54A; stroke: #8A6200; stroke-width: .9; stroke-linejoin: round; filter: drop-shadow(0 0 3px rgba(255, 213, 74, .7)); }
+.ckp.k { outline: 2px solid rgba(255, 213, 74, .6); outline-offset: -5px; }
+.ckp { transition: transform .16s var(--ease), box-shadow .2s; }
+.csq.sel .ckp { transform: translateY(-6%) scale(1.07); box-shadow: 0 0 0 3px color-mix(in srgb, var(--sq-ring) 85%, transparent), 0 9px 8px rgba(0, 0, 0, .4), inset 0 2px 2px rgba(255, 255, 255, .5); }
+.csq.can .ckp { animation: ckcan 1.5s ease-in-out infinite; }
+@keyframes ckcan { 50% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--sq-ring) 55%, transparent), 0 0 20px color-mix(in srgb, var(--sq-ring) 75%, transparent), 0 3px 0 rgba(0, 0, 0, .32), 0 6px 9px rgba(0, 0, 0, .38), inset 0 2px 2px rgba(255, 255, 255, .5); } }
+.cboard.ckb .csq.lt { background: linear-gradient(160deg, var(--sq-lt), var(--sq-lt2)); box-shadow: inset 0 0 10px rgba(120, 80, 30, .12); }
+.cboard.ckb .csq.dk { box-shadow: inset 0 0 10px rgba(0, 0, 0, .22); }
+.cboard.ckb .csq.dk.last { box-shadow: inset 0 0 0 2px rgba(255, 213, 74, .7); }
+.cboard.ckb .csq.tgt::after { width: 28%; height: 28%; }
+.ckmini { width: 15px; height: 15px; }
+.ckmini .ckcrown { display: none; }
+
+@media (prefers-reduced-motion: reduce) { .csq.can .ckp, .csq.tgt::after { animation: none; } .pc, .ckp { transition: none; } }
+/* Figuralar kataklarda kattaroq va o'qilishi oson */
+.pc { width: 100%; }
+.pc .pcs { transform: scale(1.06); transform-origin: 50% 78%; }
+.cpromo-row .pc .pcs, .ccap .cp .pcs { transform: none; }
+.ccap .cp { width: 20px; height: 20px; }

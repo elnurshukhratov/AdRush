@@ -111,8 +111,25 @@
     return wrap;
   }
 
+  /** Damka belgisi: SVG toj (matn belgisi emas — har qurilmada bir xil, o'tkir). */
+  function crown() {
+    const NS = 'http://www.w3.org/2000/svg';
+    const svg = document.createElementNS(NS, 'svg');
+    svg.setAttribute('viewBox', '0 0 24 24');
+    svg.setAttribute('class', 'ckcrown');
+    svg.setAttribute('aria-hidden', 'true');
+    const path = document.createElementNS(NS, 'path');
+    path.setAttribute('d', 'M3.2 8.2l4.6 4.1L12 5.2l4.2 7.1 4.6-4.1-1.9 10H5.1z');
+    const base = document.createElementNS(NS, 'rect');
+    base.setAttribute('x', '5.4'); base.setAttribute('y', '19.6'); base.setAttribute('width', '13.2'); base.setAttribute('height', '1.9'); base.setAttribute('rx', '.95');
+    svg.append(path, base);
+    return svg;
+  }
+
   function pieceNode(ch) {
-    return node('span', 'ckp ' + (isWhite(ch) ? 'w' : 'b') + (isKing(ch) ? ' k' : ''));
+    const p = node('span', 'ckp ' + (isWhite(ch) ? 'w' : 'b') + (isKing(ch) ? ' k' : ''));
+    if (isKing(ch)) p.appendChild(crown());
+    return p;
   }
 
   function renderBoard(board, g, ui) {

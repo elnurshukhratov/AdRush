@@ -575,8 +575,9 @@
   }
 
   function pieceNode(ch, cls) {
+    if (window.AdRushPieces) return window.AdRushPieces.make(ch, cls); // SVG dona (pieces.js) — hamma qurilmada bir xil
     const w = ch === ch.toUpperCase();
-    return el('span', 'pc ' + (w ? 'w' : 'b') + (cls ? ' ' + cls : ''), PIECE[ch.toLowerCase()] + TEXT_VS);
+    return el('span', 'pc ' + (w ? 'w' : 'b') + (cls ? ' ' + cls : ''), PIECE[ch.toLowerCase()] + TEXT_VS); // zaxira: matn belgisi
   }
 
   /** Optimistik yurish bo'lsa navbat allaqachon raqibda. */
@@ -656,7 +657,11 @@
   function capNode(mat, color) {
     const wrap = el('span', 'ccap');
     const lost = color === 'w' ? mat.lostB : mat.lostW;
-    for (const [k, n] of lost) for (let i = 0; i < n; i += 1) wrap.appendChild(el('span', 'cp ' + (color === 'w' ? 'b' : 'w'), PIECE[k] + TEXT_VS));
+    for (const [k, n] of lost) for (let i = 0; i < n; i += 1) {
+      wrap.appendChild(window.AdRushPieces
+        ? window.AdRushPieces.small(k, color !== 'w')
+        : el('span', 'cp ' + (color === 'w' ? 'b' : 'w'), PIECE[k] + TEXT_VS));
+    }
     const adv = color === 'w' ? mat.diff : -mat.diff;
     if (adv > 0) wrap.appendChild(el('em', null, '+' + adv));
     return wrap;
