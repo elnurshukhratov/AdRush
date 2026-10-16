@@ -1,20 +1,20 @@
 /* ===== AdRush — Shahmat (Home) =====
    Mavjud dizayn tokenlari (mine.css) va liquid-glass uslubi; Kun / Tun mavzusiga mos. Tashqi rasm / shrift yo'q. */
 :root, [data-theme="dark"] {
-  --sq-lt: #BCCFE6; --sq-lt2: #A6BDD9; --sq-dk: #4B6F9A; --sq-dk2: #3C5E88;
+  --sq-lt: #CFDDF1; --sq-lt2: #B9CCE7; --sq-dk: #4A6E9F; --sq-dk2: #38598C;
   --sq-sel: rgba(250, 204, 21, .62); --sq-last: rgba(250, 204, 21, .34);
   --sq-last-lt: #F2E3A0; --sq-last-dk: #C9B24F; --sq-ring: #FACC15;
   --sq-tgt: rgba(2, 16, 28, .42); --sq-cap: rgba(248, 113, 113, .85); --sq-chk: rgba(248, 113, 113, .78);
-  --board-frame: linear-gradient(145deg, #2B3F5E, #16233A); --board-frame-edge: rgba(255, 255, 255, .14);
+  --board-frame: linear-gradient(145deg, #3A5784, #1B2C4A 52%, #263F68); --board-frame-edge: rgba(255, 255, 255, .18);
   --pc-w: #FFFFFF; --pc-w-edge: #0B1424; --pc-b: #0B1424; --pc-b-edge: rgba(255, 255, 255, .55);
   --sq-coord: rgba(255, 255, 255, .72);
 }
 [data-theme="light"] {
-  --sq-lt: #EAF2FC; --sq-lt2: #D9E6F6; --sq-dk: #7FA4D0; --sq-dk2: #6B92C2;
+  --sq-lt: #F1F6FD; --sq-lt2: #DFEAF8; --sq-dk: #7BA1CF; --sq-dk2: #668DBF;
   --sq-sel: rgba(250, 204, 21, .70); --sq-last: rgba(250, 204, 21, .42);
   --sq-last-lt: #F6E8A8; --sq-last-dk: #D4BC55; --sq-ring: #F59E0B;
   --sq-tgt: rgba(10, 22, 48, .30); --sq-cap: rgba(220, 38, 38, .75); --sq-chk: rgba(220, 38, 38, .62);
-  --board-frame: linear-gradient(145deg, #B8CBE4, #94AFD2); --board-frame-edge: rgba(255, 255, 255, .7);
+  --board-frame: linear-gradient(145deg, #C6D6EC, #8FAAD0 55%, #A7BDDD); --board-frame-edge: rgba(255, 255, 255, .75);
   --pc-w: #FFFFFF; --pc-w-edge: #0A1630; --pc-b: #0A1630; --pc-b-edge: rgba(255, 255, 255, .7);
   --sq-coord: rgba(10, 22, 48, .62);
 }
@@ -265,3 +265,49 @@
 .pc .pcs { transform: scale(1.06); transform-origin: 50% 78%; }
 .cpromo-row .pc .pcs, .ccap .cp .pcs { transform: none; }
 .ccap .cp { width: 20px; height: 20px; }
+
+/* ===== v8: Chiroyli taxta (shahmat + shashka). Faqat CSS: tashqi rasm / shrift yo'q ===== */
+
+/* --- Ramka: qalin, chuqur, ichida ingichka oltin chiziq --- */
+.cboard-wrap { position: relative; padding: 10px; border-radius: 26px;
+  box-shadow: var(--card-shadow), 0 18px 38px rgba(0, 0, 0, .3), 0 2px 0 rgba(255, 255, 255, .12) inset, 0 -3px 0 rgba(0, 0, 0, .22) inset; }
+.cboard-wrap::before { content: ""; position: absolute; inset: 4px; border-radius: 22px; border: 1px solid rgba(250, 204, 21, .32); pointer-events: none; }
+.cboard { position: relative; border-radius: 16px;
+  box-shadow: 0 0 0 1.5px rgba(0, 0, 0, .38), 0 0 0 3px rgba(255, 255, 255, .06), inset 0 0 26px rgba(0, 0, 0, .22); }
+/* Yengil yaltiroq nur (bosishga xalaqit bermaydi) */
+.cboard::after { content: ""; position: absolute; inset: 0; z-index: 2; pointer-events: none;
+  background: linear-gradient(135deg, rgba(255, 255, 255, .16) 0, rgba(255, 255, 255, 0) 34%, rgba(255, 255, 255, 0) 68%, rgba(0, 0, 0, .14) 100%); }
+
+/* --- Kataklar: yumshoq yorug'lik + nozik chegara --- */
+.csq.lt { background: radial-gradient(120% 120% at 18% 12%, rgba(255, 255, 255, .6), rgba(255, 255, 255, 0) 62%), linear-gradient(160deg, var(--sq-lt), var(--sq-lt2));
+  box-shadow: inset 0 0 0 .5px rgba(255, 255, 255, .35); }
+.csq.dk { background: radial-gradient(120% 120% at 18% 12%, rgba(255, 255, 255, .17), rgba(255, 255, 255, 0) 58%), linear-gradient(160deg, var(--sq-dk), var(--sq-dk2));
+  box-shadow: inset 0 0 0 .5px rgba(255, 255, 255, .07), inset 0 -6px 10px rgba(0, 0, 0, .1); }
+/* Oxirgi yurish: oltin tus */
+.csq.lt.last { background: linear-gradient(rgba(250, 204, 21, .5), rgba(250, 204, 21, .32)), linear-gradient(160deg, var(--sq-lt), var(--sq-lt2)); box-shadow: inset 0 0 0 2px rgba(250, 204, 21, .6); }
+.csq.dk.last { background: linear-gradient(rgba(250, 204, 21, .46), rgba(250, 204, 21, .3)), linear-gradient(160deg, var(--sq-dk), var(--sq-dk2)); box-shadow: inset 0 0 0 2px rgba(250, 204, 21, .6); }
+/* Tanlangan katak: iliq nur */
+.csq.sel::before { background: radial-gradient(circle at 50% 45%, rgba(250, 204, 21, .6), rgba(250, 204, 21, .26) 72%); box-shadow: inset 0 0 0 3px var(--sq-ring), inset 0 0 20px rgba(250, 204, 21, .6); }
+/* Yurish nishonlari: oltin nuqta; urish — qizil halqa */
+.csq.tgt::after { width: 30%; height: 30%; background: radial-gradient(circle at 35% 30%, #FFF3B0, #FACC15 60%, #C99A0A); box-shadow: 0 0 0 3px rgba(250, 204, 21, .28), 0 0 12px rgba(250, 204, 21, .55); }
+.csq.tgt.cap::after { width: 94%; height: 94%; background: radial-gradient(circle, transparent 57%, rgba(248, 113, 113, .95) 60% 74%, transparent 77%); box-shadow: 0 0 14px rgba(248, 113, 113, .45); }
+/* Shoh xavfi: qizil nur */
+.csq.chk::before { background: radial-gradient(circle, rgba(255, 90, 90, .95) 0, rgba(248, 113, 113, .7) 40%, transparent 76%); }
+/* Koordinatalar: o'qilishi oson, o'lchamga moslashadi */
+.csq .co-r, .csq .co-f { font-size: clamp(8px, 2.5cqw, 11px); font-weight: 800; opacity: .92; text-shadow: 0 0 2px rgba(0, 0, 0, .08); }
+.csq .co-r { left: 4px; top: 3px; }
+.csq .co-f { right: 4px; bottom: 3px; }
+
+/* --- Shashka taxtasi: yog'och (yong'oq va zarang), tolali naqsh, guruch hoshiya --- */
+.cboard-wrap:has(.cboard.ckb) { background: repeating-linear-gradient(90deg, rgba(0, 0, 0, .09) 0 2px, rgba(0, 0, 0, 0) 2px 9px), linear-gradient(145deg, #70492B, #3C2515 52%, #56361F); border-color: rgba(255, 220, 170, .26); }
+[data-theme="light"] .cboard-wrap:has(.cboard.ckb) { background: repeating-linear-gradient(90deg, rgba(90, 50, 15, .09) 0 2px, rgba(0, 0, 0, 0) 2px 9px), linear-gradient(145deg, #D7AB7C, #A97848 55%, #C28E5C); }
+.cboard-wrap:has(.cboard.ckb)::before { border-color: rgba(233, 190, 110, .55); }
+.cboard.ckb { --sq-dk: #8A5733; --sq-dk2: #6F4325; --sq-lt: #F3E4C4; --sq-lt2: #E6CFA2; }
+[data-theme="light"] .cboard.ckb { --sq-dk: #A06B40; --sq-dk2: #86552F; --sq-lt: #F8ECD2; --sq-lt2: #EDD8AF; }
+.cboard.ckb .csq.lt { background: repeating-linear-gradient(90deg, rgba(150, 100, 40, .07) 0 1px, rgba(0, 0, 0, 0) 1px 6px), radial-gradient(120% 120% at 18% 12%, rgba(255, 255, 255, .55), rgba(255, 255, 255, 0) 62%), linear-gradient(160deg, var(--sq-lt), var(--sq-lt2)); box-shadow: inset 0 0 12px rgba(120, 80, 30, .14); }
+.cboard.ckb .csq.dk { background-image: repeating-linear-gradient(92deg, rgba(0, 0, 0, .07) 0 1px, rgba(0, 0, 0, 0) 1px 5px), repeating-linear-gradient(88deg, rgba(255, 225, 180, .06) 0 2px, rgba(0, 0, 0, 0) 2px 11px), radial-gradient(120% 120% at 18% 12%, rgba(255, 220, 170, .26), rgba(255, 220, 170, 0) 58%), linear-gradient(160deg, var(--sq-dk), var(--sq-dk2)); box-shadow: inset 0 0 12px rgba(0, 0, 0, .28), inset 0 1px 0 rgba(255, 220, 170, .16); }
+.cboard.ckb .csq.dk.last { background-image: linear-gradient(rgba(255, 213, 74, .5), rgba(255, 213, 74, .34)), repeating-linear-gradient(92deg, rgba(0, 0, 0, .07) 0 1px, rgba(0, 0, 0, 0) 1px 5px), linear-gradient(160deg, var(--sq-dk), var(--sq-dk2)); background-color: transparent; box-shadow: inset 0 0 0 2px rgba(255, 213, 74, .75); }
+.cboard.ckb .csq.tgt::after { width: 28%; height: 28%; }
+.cboard.ckb::after { background: linear-gradient(135deg, rgba(255, 240, 205, .18) 0, rgba(255, 240, 205, 0) 34%, rgba(255, 240, 205, 0) 66%, rgba(0, 0, 0, .18) 100%); }
+
+@media (prefers-reduced-motion: reduce) { .csq.sel::before { animation: none; } }
