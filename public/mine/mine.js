@@ -91,7 +91,8 @@
   const tgTry = (fn) => { try { fn(); } catch (_e) { /* ixtiyoriy imkoniyat */ } };
   const atLeast = (v) => Boolean(tg && typeof tg.isVersionAtLeast === 'function' && tg.isVersionAtLeast(v));
 
-  function haptic(kind) {
+  function haptic(kind, quiet) {
+    if (!quiet && window.AdRushSound) window.AdRushSound.haptic(kind); // ovoz (quiet=true — chaqiruvchi o'zi alohida ovoz chaladi)
     const h = tg && tg.HapticFeedback;
     if (!h) return;
     tgTry(() => {

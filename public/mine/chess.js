@@ -166,6 +166,8 @@
   const isCk = () => S.gameType === 'CHECKERS';
   const apiType = () => S.gameType.toLowerCase(); // API: 'chess' | 'checkers'
   const CK = () => window.AdRushCheckers || null; // checkers.js (chess.js dan oldin ulanadi)
+  const playSnd = (name, delay) => { const s = window.AdRushSound; if (s) s.play(name, delay); }; // sounds.js (ixtiyoriy)
+  const pieceCount = (fen) => String(fen || '').split(' ')[0].replace(/[\d/]/g, '').length; // taxtadagi donalar soni (urish aniqlash uchun)
 
   function setType(v) {
     const nt = normType(v);
@@ -321,13 +323,20 @@
     show('game');
     renderGame();
     if (prev && fresh && g.lastMove) slideMove(g.lastMove); // raqib / bot yurishi: figura sirpanib boradi
-    if (prev && fresh && prev.yourColor && g.turn === g.yourColor && g.status === 'ACTIVE') A.haptic('light');
+    const pcs = pieceCount(g.fen);
+    if (prev && fresh && g.lastMove) { // raqib / bot yurishi ovozi
+      const cap = S.pcs != null && pcs < S.pcs;
+      playSnd(g.inCheck && g.turn === g.yourColor ? 'check' : cap ? 'capture' : 'move');
+    }
+    S.pcs = pcs;
+    if (prev && fresh && prev.yourColor && g.turn === g.yourColor && g.status === 'ACTIVE') A.haptic('light', true);
     S.shownCount = g.moveCount;
     if (g.status === 'FINISHED') {
       S.wId += 1;
       stopTick();
       A.refresh().catch(() => {}); // global balans: yuqori panel, Vazifalar, Profil
-      A.haptic(g.yourDelta > 0 ? 'success' : g.yourDelta < 0 ? 'warning' : 'light');
+      A.haptic(g.yourDelta > 0 ? 'success' : g.yourDelta < 0 ? 'warning' : 'light', true);
+      if (prev && S.shownFor !== g.id) playSnd(g.yourDelta > 0 ? 'win' : g.yourDelta < 0 ? 'lose' : 'draw', 300); // oxirgi yurish ovozidan keyin
       if (S.shownFor !== g.id) { S.shownFor = g.id; openResult(); }
       return;
     }
@@ -961,7 +970,14 @@
     if (S.clock && g.mode === 'ONLINE') { // mening soatim darhol to'xtaydi, raqibniki yura boshlaydi
       S.clock = { w: clockMs('w'), b: clockMs('b'), run: g.yourColor === 'w' ? 'b' : 'w', at: Date.now() };
     }
-    A.haptic('select');
+    A.haptic('select', true);
+    let cap = false;
+    if (opt && opt.map && typeof opt.map === 'object') { // o'z yurishim: darhol ovoz (optimistik taxta bo'yicha urish aniqlanadi)
+      const n = Object.keys(opt.map).length;
+      cap = S.pcs != null && n < S.pcs;
+      S.pcs = n;
+    }
+    playSnd(cap ? 'capture' : 'move');
     const sent = flushMove(); // S.busy sinxron o'rnatiladi (birinchi await gacha), shuning uchun render "yuborilmadi" demaydi
     renderGame();
     slideMove(slide);
